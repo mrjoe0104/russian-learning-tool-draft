@@ -260,8 +260,21 @@ function extractFields(text, pos, query) {
 }
 
 async function gramota(q) {
-  const target = 'https://gramota.ru/poisk?mode=all&query=' + encodeURIComponent(q);
-  const response = await fetch(target, {headers:{'User-Agent':'Mozilla/5.0 Russian-Learning-Tool/1.9'}});
+  // Use Gramota's dictionary-only search. This is the same search surface
+  // that exposes the lexical entries under "Словари" and is less noisy
+  // than the general "mode=all" page.
+  const target = 'https://gramota.ru/poisk?mode=slovari&query=' + encodeURIComponent(q) + '&simple=0';
+  const response = await fetch(target, {
+    headers:{
+      'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/153.0 Safari/537.36',
+      'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language':'ru-RU,ru;q=0.9,en-US;q=0.7,en;q=0.5',
+      'Referer':'https://gramota.ru/'
+    }
+  });
+  if (response.status === 429) {
+    throw new Error('Gramota 응답 오류: HTTP 429 (잠시 후 다시 시도해 주세요)');
+  }
   if (!response.ok) throw new Error('Gramota 응답 오류: HTTP ' + response.status);
   const html = await response.text();
   const text = stripHtml(html);
@@ -307,7 +320,7 @@ const server = http.createServer(async (req,res)=>{
       return send(res,200,JSON.stringify(data),'application/json; charset=utf-8');
     }
     if (u.pathname === '/api/health') {
-      return send(res,200,JSON.stringify({ok:true,version:'2.0.0',source:'Gramota'}),'application/json; charset=utf-8');
+      return send(res,200,JSON.stringify({ok:true,version:'2.1.0',source:'Gramota'}),'application/json; charset=utf-8');
     }
     if (u.pathname === '/' || u.pathname === '/index.html') {
       const html = fs.readFileSync(path.join(ROOT,'index.html'));
@@ -320,7 +333,7 @@ const server = http.createServer(async (req,res)=>{
 });
 
 if (require.main === module) {
-  server.listen(PORT, HOST, ()=>console.log(`Russian Learning Tool V2.0: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`));
+  server.listen(PORT, HOST, ()=>console.log(`Russian Learning Tool V2.1: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`));
 }
 
 module.exports = {
