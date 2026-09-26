@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>러시아어 학습 도구 앱 · V1.9</title>
+<title>러시아어 학습 도구 앱 · V2.0</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#f5f5f5;color:#222;font-family:Arial,sans-serif}.wrap{width:min(900px,92%);margin:0 auto;padding:70px 0 50px}h1{text-align:center;margin:0 0 10px;font-size:32px}.version{text-align:center;color:#777;font-size:13px;margin-bottom:28px}.search{display:flex;gap:10px}.search input{flex:1;height:52px;padding:0 16px;border:1px solid #ccc;border-radius:10px;background:#fff;font-size:18px;outline:none}.search input:focus{border-color:#777}.search button{height:52px;padding:0 22px;border:0;border-radius:10px;background:#222;color:#fff;font-size:16px;cursor:pointer}.search button:disabled{opacity:.5;cursor:wait}.examples{text-align:center;color:#777;font-size:14px;margin:12px 0 28px}.result{margin-top:20px}.card{background:#fff;border:1px solid #ddd;border-radius:14px;padding:22px;margin-bottom:16px}.head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.lemma{font-size:30px;font-weight:700}.pos{font-size:14px;color:#666;background:#eee;padding:5px 9px;border-radius:8px}.meaning{font-size:18px;margin-top:12px}.meta{color:#555;margin-top:10px;line-height:1.7}.section{margin-top:22px}.section h3{font-size:17px;margin:0 0 10px}.note{color:#777;font-size:13px;margin-top:10px}.notfound{text-align:center;color:#777;padding:28px}.status{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border-radius:8px;background:#f1f1f1;font-size:13px}.status.ok{background:#eaf6ed}.status.error{background:#fbeaea}.source{margin-top:16px}.source a{color:#3157a6}.raw{white-space:pre-wrap;background:#fafafa;border:1px solid #eee;border-radius:10px;padding:14px;max-height:260px;overflow:auto;font-size:13px;line-height:1.55}.template-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.template-grid>div{padding:10px;background:#f7f7f7;border-radius:8px;color:#555}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid #ddd;padding:8px;text-align:center}.table th{background:#f1f1f1;font-weight:600}@media(max-width:600px){.search{flex-direction:column}.search button{width:100%}.template-grid{grid-template-columns:1fr}}
 </style>
@@ -11,7 +11,7 @@
 <body>
 <div class="wrap">
 <h1>러시아어 학습 도구 앱</h1>
-<div class="version">V1.9 · 온라인 배포용 · Gramota 검색 → 판정 → 원형 → 품사별 정보 → 최종 출력</div>
+<div class="version">V2.0 · 온라인 배포용 · Gramota 검색 → 판정 → 원형 → 품사별 정보 → 최종 출력</div>
 <div class="search">
   <input id="searchInput" type="text" placeholder="러시아어 단어를 입력하세요" autocomplete="off" spellcheck="false">
   <button id="searchBtn">검색</button>
@@ -21,7 +21,7 @@
 <div id="result" class="result"></div>
 
 <div class="card">
-  <h2>V1.9 전체 파이프라인</h2>
+  <h2>V2.0 전체 파이프라인</h2>
   <div class="template-grid">
     <div>① 사용자 입력</div><div>② Gramota 검색</div>
     <div>③ 검색 결과 확인</div><div>④ 관련 품사 선택</div>
