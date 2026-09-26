@@ -76,22 +76,76 @@ function findPosEntries(lines) {
   return entries;
 }
 
-function findRelevantBlock(text, query) {
+function splitLines(text) {
+  return text.split(/\n+/).map(normalizeText).filter(Boolean);
+}
+
+function lineContainsQuery(line, query) {
   const q = normalizeForMatch(query);
-  const lines = text.split(/\n+/).map(normalizeText).filter(Boolean);
+  const n = normalizeForMatch(line);
+  if (!q || !n) return false;
+  if (n === q) return true;
+  return n.split(/[^a-zа-яё0-9-]+/i).includes(q);
+}
+
+function findGramotaDictionaryBlock(lines, query) {
+  const dictionaryIndex = lines.findIndex(line => /^Словари$/i.test(line));
+  if (dictionaryIndex < 0) return null;
+
+  const sectionEnd = lines.findIndex((line, i) => i > dictionaryIndex && /^(?:Метасловарь|Справочники|Ответы справочной службы|Журнал)$/i.test(line));
+  const end = sectionEnd >= 0 ? sectionEnd : lines.length;
+  const section = lines.slice(dictionaryIndex + 1, end);
+
+  // Gramota's dictionary results have a stable textual pattern:
+  // headword -> POS/grammar line -> forms/definition -> "Всё об этом слове".
+  // Select the first dictionary entry whose block explicitly contains the query
+  // (either as the headword or as an inflected form). This avoids counting
+  // unrelated POS labels elsewhere on the page as ambiguous matches.
+  for (let i = 0; i < section.length; i++) {
+    const pos = detectPos(section[i]);
+    if (pos === 'unknown') continue;
+
+    let headIndex = i - 1;
+    while (headIndex >= 0 && !isWordLine(section[headIndex])) headIndex--;
+    if (headIndex < 0) continue;
+
+    const entryEndRel = section.findIndex((line, j) => j > i && /^Всё об этом слове$/i.test(line));
+    const entryEnd = entryEndRel >= 0 ? entryEndRel : Math.min(section.length, i + 35);
+    const blockLines = section.slice(headIndex, entryEnd + (entryEndRel >= 0 ? 1 : 0));
+    const blockText = blockLines.join('\n');
+
+    if (lineContainsQuery(section[headIndex], query) || blockLines.some(line => lineContainsQuery(line, query))) {
+      return {
+        text: blockText,
+        pos,
+        queryMatched: true,
+        formLine: blockLines.find(line => lineContainsQuery(line, query)) || section[headIndex],
+        confidence: 'high'
+      };
+    }
+  }
+  return null;
+}
+
+function findRelevantBlock(text, query) {
+  const lines = splitLines(text);
+
+  // Prefer Gramota's dictionary section, which has the actual lexical entries.
+  // This is the primary path for real Gramota pages and handles both exact and
+  // inflected queries such as "книга" and "книгами" without guessing.
+  const dictionaryBlock = findGramotaDictionaryBlock(lines, query);
+  if (dictionaryBlock) return dictionaryBlock;
+
+  // Conservative fallback for test fixtures / alternate page layouts.
+  const q = normalizeForMatch(query);
   const entries = findPosEntries(lines);
   if (!entries.length) {
     return {text:'', pos:'unknown', queryMatched:false, formLine:NO_INFO, confidence:'none'};
   }
 
-  // Only accept a result when the searched form is explicitly present in the
-  // Gramota result text. Never fall back to the first dictionary entry.
   const occurrences = [];
   for (let i=0; i<lines.length; i++) {
-    const normalizedLine = normalizeForMatch(lines[i]);
-    if (normalizedLine === q || normalizedLine.split(/[^a-zа-яё0-9́-]+/i).includes(q)) {
-      occurrences.push(i);
-    }
+    if (lineContainsQuery(lines[i], q)) occurrences.push(i);
   }
 
   if (!occurrences.length) {
@@ -253,7 +307,7 @@ const server = http.createServer(async (req,res)=>{
       return send(res,200,JSON.stringify(data),'application/json; charset=utf-8');
     }
     if (u.pathname === '/api/health') {
-      return send(res,200,JSON.stringify({ok:true,version:'1.9.0',source:'Gramota'}),'application/json; charset=utf-8');
+      return send(res,200,JSON.stringify({ok:true,version:'2.0.0',source:'Gramota'}),'application/json; charset=utf-8');
     }
     if (u.pathname === '/' || u.pathname === '/index.html') {
       const html = fs.readFileSync(path.join(ROOT,'index.html'));
@@ -266,7 +320,7 @@ const server = http.createServer(async (req,res)=>{
 });
 
 if (require.main === module) {
-  server.listen(PORT, HOST, ()=>console.log(`Russian Learning Tool V1.9: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`));
+  server.listen(PORT, HOST, ()=>console.log(`Russian Learning Tool V2.0: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`));
 }
 
 module.exports = {
