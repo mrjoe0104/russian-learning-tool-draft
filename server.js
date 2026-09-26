@@ -259,12 +259,9 @@ function extractFields(text, pos, query) {
   return fields;
 }
 
-async function gramota(q) {
-  // Use Gramota's dictionary-only search. This is the same search surface
-  // that exposes the lexical entries under "Словари" and is less noisy
-  // than the general "mode=all" page.
-  const target = 'https://gramota.ru/poisk?mode=slovari&query=' + encodeURIComponent(q) + '&simple=0';
-  const response = await fetch(target, {
+async function fetchGramotaPage(target) {
+  // 1) Try Gramota directly first.
+  const direct = await fetch(target, {
     headers:{
       'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/153.0 Safari/537.36',
       'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -272,12 +269,42 @@ async function gramota(q) {
       'Referer':'https://gramota.ru/'
     }
   });
-  if (response.status === 429) {
-    throw new Error('Gramota 응답 오류: HTTP 429 (잠시 후 다시 시도해 주세요)');
+
+  if (direct.ok) {
+    return { html: await direct.text(), via: 'direct' };
   }
-  if (!response.ok) throw new Error('Gramota 응답 오류: HTTP ' + response.status);
-  const html = await response.text();
-  const text = stripHtml(html);
+
+  // Render's outbound IP is being rate-limited by Gramota (HTTP 429).
+  // Fall back to Jina Reader only as a transport/proxy: the target remains
+  // the Gramota dictionary page, and no alternative dictionary is substituted.
+  if (direct.status !== 429) {
+    throw new Error('Gramota 응답 오류: HTTP ' + direct.status);
+  }
+
+  const proxyResponse = await fetch('https://r.jina.ai/', {
+    method:'POST',
+    headers:{
+      'Content-Type':'application/x-www-form-urlencoded',
+      'Accept':'text/html',
+      'X-Respond-With':'html'
+    },
+    body:'url=' + encodeURIComponent(target)
+  });
+
+  if (!proxyResponse.ok) {
+    throw new Error('Gramota 응답 오류: 직접 접속 HTTP 429, 대체 접속도 실패 (HTTP ' + proxyResponse.status + ')');
+  }
+
+  return { html: await proxyResponse.text(), via: 'jina-proxy' };
+}
+
+async function gramota(q) {
+  // Use Gramota's dictionary-only search. This is the same search surface
+  // that exposes the lexical entries under "Словари" and is less noisy
+  // than the general "mode=all" page.
+  const target = 'https://gramota.ru/poisk?mode=slovari&query=' + encodeURIComponent(q) + '&simple=0';
+  const fetched = await fetchGramotaPage(target);
+  const text = stripHtml(fetched.html);
   const selected = findRelevantBlock(text, q);
   const block = selected.text;
   const pos = selected.pos;
@@ -303,10 +330,12 @@ async function gramota(q) {
       posDetected:pos !== 'unknown',
       lemmaResolved:fields.lemma !== NO_INFO,
       fieldsExtracted:Object.fromEntries(Object.entries(fields).filter(([k,v]) => !['query','pos'].includes(k)).map(([k,v]) => [k, v !== NO_INFO])),
-      completed:true
+      completed:true,
+      transport:fetched.via
     },
     snippet:block ? block.slice(0, 2200) : NO_INFO,
-    source:target
+    source:target,
+    transport:fetched.via
   };
 }
 
@@ -320,7 +349,7 @@ const server = http.createServer(async (req,res)=>{
       return send(res,200,JSON.stringify(data),'application/json; charset=utf-8');
     }
     if (u.pathname === '/api/health') {
-      return send(res,200,JSON.stringify({ok:true,version:'2.1.0',source:'Gramota'}),'application/json; charset=utf-8');
+      return send(res,200,JSON.stringify({ok:true,version:'2.2.0',source:'Gramota'}),'application/json; charset=utf-8');
     }
     if (u.pathname === '/' || u.pathname === '/index.html') {
       const html = fs.readFileSync(path.join(ROOT,'index.html'));
@@ -333,7 +362,7 @@ const server = http.createServer(async (req,res)=>{
 });
 
 if (require.main === module) {
-  server.listen(PORT, HOST, ()=>console.log(`Russian Learning Tool V2.1: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`));
+  server.listen(PORT, HOST, ()=>console.log(`Russian Learning Tool V2.2: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`));
 }
 
 module.exports = {
