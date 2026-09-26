@@ -14,359 +14,284 @@ function send(res, status, body, type='text/plain; charset=utf-8') {
 }
 
 function decodeEntities(s='') {
-  return s
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&').replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'").replace(/&lt;/gi, '<').replace(/&gt;/gi, '>');
+  return s.replace(/&nbsp;/gi,' ').replace(/&amp;/gi,'&').replace(/&quot;/gi,'"')
+    .replace(/&#39;/gi,"'").replace(/&lt;/gi,'<').replace(/&gt;/gi,'>');
 }
 
 function stripHtml(html) {
   return decodeEntities(html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<br\s*\/?>(?=.)/gi, '\n')
-    .replace(/<\/p>|<\/div>|<\/li>|<\/tr>|<\/td>|<\/th>/gi, '\n')
-    .replace(/<[^>]+>/g, ' '))
-    .replace(/[ \t\r\f]+/g, ' ')
-    .replace(/\n\s+/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+    .replace(/<script[\s\S]*?<\/script>/gi,' ')
+    .replace(/<style[\s\S]*?<\/style>/gi,' ')
+    .replace(/<(br|hr)\s*\/?>/gi,'\n')
+    .replace(/<\/(p|div|li|tr|table|section|article|h[1-6])\s*>/gi,'\n')
+    .replace(/<\/(td|th)\s*>/gi,'\t')
+    .replace(/<[^>]+>/g,' '))
+    .replace(/\u00a0/g,' ')
+    .replace(/[ \t]+/g,' ')
+    .replace(/\n[ \t]+/g,'\n')
+    .replace(/\n{3,}/g,'\n\n').trim();
 }
 
-function normalizeText(s='') {
-  return s.replace(/[\u00ad\u200b]/g, '').replace(/\s+/g, ' ').trim();
-}
-
-function normalizeForMatch(s='') {
-  return normalizeText(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-}
-
+function normalizeText(s='') { return s.replace(/[\u00ad\u200b]/g,'').replace(/\s+/g,' ').trim(); }
+function normalizeForMatch(s='') { return normalizeText(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+function posLabel(pos) { return ({noun:'명사',verb:'동사',adjective:'형용사',adverb:'부사',unknown:'판별 불가'})[pos] || '판별 불가'; }
 function detectPos(text) {
-  if (/(^|[\s,])Существительное(?:[,.\s]|$)/i.test(text)) return 'noun';
-  if (/(^|[\s,])Глагол(?:[,.\s]|$)/i.test(text)) return 'verb';
-  if (/(^|[\s,])Прилагательное(?:[,.\s]|$)/i.test(text)) return 'adjective';
-  if (/(^|[\s,])Наречие(?:[,.\s]|$)/i.test(text)) return 'adverb';
+  if (/(^|[\s,])Существительное(?:[,\.\s]|$)/i.test(text)) return 'noun';
+  if (/(^|[\s,])Глагол(?:[,\.\s]|$)/i.test(text)) return 'verb';
+  if (/(^|[\s,])Прилагательное(?:[,\.\s]|$)/i.test(text)) return 'adjective';
+  if (/(^|[\s,])Наречие(?:[,\.\s]|$)/i.test(text)) return 'adverb';
   return 'unknown';
 }
-
-function posLabel(pos) {
-  return ({noun:'명사',verb:'동사',adjective:'형용사',adverb:'부사',unknown:'판별 불가'})[pos] || '판별 불가';
-}
-
-function firstMatch(text, patterns) {
-  for (const re of patterns) {
-    const m = text.match(re);
-    if (m && m[1]) return normalizeText(m[1]);
-  }
-  return NO_INFO;
-}
-
-function isWordLine(line) {
-  // A conservative candidate for Gramota's standalone headword line.
-  // Keep accents and hyphens; reject navigation/metadata sentences.
-  return /^[А-ЯЁа-яё][А-ЯЁа-яё́-]{1,}(?:\s+[А-ЯЁа-яё́-]{1,})?$/.test(line.trim());
-}
-
-function findPosEntries(lines) {
-  const entries = [];
-  for (let i = 0; i < lines.length; i++) {
-    const pos = detectPos(lines[i]);
-    if (pos !== 'unknown') entries.push({pos, posIndex:i});
-  }
-  return entries;
-}
-
-function splitLines(text) {
-  return text.split(/\n+/).map(normalizeText).filter(Boolean);
-}
-
+function isWordLine(line) { return /^[А-ЯЁа-яё][А-ЯЁа-яё́-]{1,}(?:\s+[А-ЯЁа-яё́-]{1,})?$/.test(line.trim()); }
+function splitLines(text) { return text.split(/\n+/).map(normalizeText).filter(Boolean); }
 function lineContainsQuery(line, query) {
-  const q = normalizeForMatch(query);
-  const n = normalizeForMatch(line);
-  if (!q || !n) return false;
-  if (n === q) return true;
-  return n.split(/[^a-zа-яё0-9-]+/i).includes(q);
+  const q=normalizeForMatch(query), n=normalizeForMatch(line); if(!q||!n)return false;
+  return n===q || n.split(/[^a-zа-яё0-9-]+/i).includes(q);
 }
 
 function findGramotaDictionaryBlock(lines, query) {
-  const dictionaryIndex = lines.findIndex(line => /^Словари$/i.test(line));
-  if (dictionaryIndex < 0) return null;
-
-  const sectionEnd = lines.findIndex((line, i) => i > dictionaryIndex && /^(?:Метасловарь|Справочники|Ответы справочной службы|Журнал)$/i.test(line));
-  const end = sectionEnd >= 0 ? sectionEnd : lines.length;
-  const section = lines.slice(dictionaryIndex + 1, end);
-
-  // Gramota's dictionary results have a stable textual pattern:
-  // headword -> POS/grammar line -> forms/definition -> "Всё об этом слове".
-  // Select the first dictionary entry whose block explicitly contains the query
-  // (either as the headword or as an inflected form). This avoids counting
-  // unrelated POS labels elsewhere on the page as ambiguous matches.
-  for (let i = 0; i < section.length; i++) {
-    const pos = detectPos(section[i]);
-    if (pos === 'unknown') continue;
-
-    let headIndex = i - 1;
-    while (headIndex >= 0 && !isWordLine(section[headIndex])) headIndex--;
-    if (headIndex < 0) continue;
-
-    const entryEndRel = section.findIndex((line, j) => j > i && /^Всё об этом слове$/i.test(line));
-    const entryEnd = entryEndRel >= 0 ? entryEndRel : Math.min(section.length, i + 35);
-    const blockLines = section.slice(headIndex, entryEnd + (entryEndRel >= 0 ? 1 : 0));
-    const blockText = blockLines.join('\n');
-
-    if (lineContainsQuery(section[headIndex], query) || blockLines.some(line => lineContainsQuery(line, query))) {
-      return {
-        text: blockText,
-        pos,
-        queryMatched: true,
-        formLine: blockLines.find(line => lineContainsQuery(line, query)) || section[headIndex],
-        confidence: 'high'
-      };
-    }
+  const di=lines.findIndex(x=>/^Словари$/i.test(x)); if(di<0)return null;
+  const ei=lines.findIndex((x,i)=>i>di && /^(?:Метасловарь|Справочники|Ответы справочной службы|Журнал)$/i.test(x));
+  const end=ei>=0?ei:lines.length, section=lines.slice(di+1,end);
+  for(let i=0;i<section.length;i++){
+    const pos=detectPos(section[i]); if(pos==='unknown')continue;
+    let hi=i-1; while(hi>=0 && !isWordLine(section[hi]))hi--;
+    if(hi<0)continue;
+    const stopRel=section.findIndex((x,j)=>j>i && /^Всё об этом слове$/i.test(x));
+    const stop=stopRel>=0?stopRel:Math.min(section.length,i+80);
+    const blockLines=section.slice(hi,stop+1), blockText=blockLines.join('\n');
+    if(lineContainsQuery(section[hi],query)||blockLines.some(x=>lineContainsQuery(x,query)))
+      return {text:blockText,pos,queryMatched:true,formLine:blockLines.find(x=>lineContainsQuery(x,query))||section[hi],confidence:'high'};
   }
   return null;
 }
 
-function findRelevantBlock(text, query) {
-  const lines = splitLines(text);
+function findRelevantBlock(text,query){
+  const lines=splitLines(text), primary=findGramotaDictionaryBlock(lines,query); if(primary)return primary;
+  const posEntries=[];
+  for(let i=0;i<lines.length;i++){const p=detectPos(lines[i]);if(p!=='unknown')posEntries.push({pos:p,posIndex:i});}
+  const occ=lines.map((x,i)=>lineContainsQuery(x,query)?i:-1).filter(i=>i>=0);
+  if(!occ.length||!posEntries.length)return {text:'',pos:'unknown',queryMatched:false,formLine:NO_INFO,confidence:'none'};
+  const cand=posEntries.map(e=>({...e,distance:Math.min(...occ.map(o=>Math.abs(e.posIndex-o)))})).filter(x=>x.distance<=15).sort((a,b)=>a.distance-b.distance);
+  if(!cand.length)return {text:'',pos:'unknown',queryMatched:true,formLine:lines[occ[0]],confidence:'low'};
+  const c=cand[0], start=Math.max(0,c.posIndex-8), end=Math.min(lines.length,c.posIndex+70);
+  return {text:lines.slice(start,end).join('\n'),pos:c.pos,queryMatched:true,formLine:lines[occ[0]],confidence:c.distance<=5?'high':'medium'};
+}
 
-  // Prefer Gramota's dictionary section, which has the actual lexical entries.
-  // This is the primary path for real Gramota pages and handles both exact and
-  // inflected queries such as "книга" and "книгами" without guessing.
-  const dictionaryBlock = findGramotaDictionaryBlock(lines, query);
-  if (dictionaryBlock) return dictionaryBlock;
+function extractLemmaFromBlock(blockText,pos){
+  const lines=splitLines(blockText), pi=lines.findIndex(x=>detectPos(x)===pos); if(pi<0)return NO_INFO;
+  for(let i=pi-1;i>=Math.max(0,pi-5);i--){const c=lines[i].replace(/^[•·*-]\s*/,'').trim();if(isWordLine(c))return c;}
+  const m=lines[pi].match(/^([А-ЯЁа-яё][А-ЯЁа-яё́-]{1,})\s+(?:Существительное|Глагол|Прилагательное|Наречие)\b/i);
+  return m?m[1]:NO_INFO;
+}
 
-  // Conservative fallback for test fixtures / alternate page layouts.
-  const q = normalizeForMatch(query);
-  const entries = findPosEntries(lines);
-  if (!entries.length) {
-    return {text:'', pos:'unknown', queryMatched:false, formLine:NO_INFO, confidence:'none'};
+function firstMatch(text,patterns){for(const re of patterns){const m=text.match(re);if(m&&m[1])return normalizeText(m[1]);}return NO_INFO;}
+function cleanRussianDefinition(s){return normalizeText(s).replace(/^[0-9]+[.)]\s*/,'').replace(/\s+/g,' ').trim();}
+function extractDefinition(text,pos){
+  const lines=splitLines(text), pi=lines.findIndex(x=>detectPos(x)===pos); if(pi<0)return NO_INFO;
+  const stopRx=/^(?:Всё об этом слове|Метасловарь|Справочники|Ответы справочной службы|Журнал)$/i;
+  const bad=/^(?:Словари|Все формы слова|ед\.\s*число|мн\.\s*число|единственное число|множественное число|именительный|родительный|дательный|винительный|творительный|предложный|1-е лицо|2-е лицо|3-е лицо|настоящее время|прошедшее время|будущее время)/i;
+  const out=[];
+  for(const line of lines.slice(pi+1)){
+    if(stopRx.test(line))break;
+    if(bad.test(line)||/^\d+[-–]\w+/.test(line))continue;
+    if(isWordLine(line))continue;
+    if(/^(?:мужской|женский|средний) род|^\d-е склонение|^Глагол,|^Прилагательное,|^Наречие/i.test(line))continue;
+    if(line.length>2)out.push(cleanRussianDefinition(line));
+    if(out.join(' ').length>500)break;
   }
-
-  const occurrences = [];
-  for (let i=0; i<lines.length; i++) {
-    if (lineContainsQuery(lines[i], q)) occurrences.push(i);
-  }
-
-  if (!occurrences.length) {
-    return {text:'', pos:'unknown', queryMatched:false, formLine:NO_INFO, confidence:'none'};
-  }
-
-  const candidates = [];
-  for (const entry of entries) {
-    const distances = occurrences.map(oi => Math.abs(entry.posIndex - oi));
-    const distance = Math.min(...distances);
-    if (distance <= 12) candidates.push({entry, distance});
-  }
-
-  if (!candidates.length) {
-    return {text:'', pos:'unknown', queryMatched:true, formLine:lines[occurrences[0]], confidence:'low'};
-  }
-
-  candidates.sort((a,b)=>a.distance-b.distance);
-  const bestDistance = candidates[0].distance;
-  const tied = candidates.filter(c=>c.distance === bestDistance);
-  if (tied.length > 1) {
-    return {text:'', pos:'unknown', queryMatched:true, formLine:lines[occurrences[0]], confidence:'ambiguous'};
-  }
-
-  const chosen = candidates[0].entry;
-  const start = Math.max(0, chosen.posIndex - 6);
-  const end = Math.min(lines.length, chosen.posIndex + 24);
-  return {
-    text: lines.slice(start, end).join('\n'),
-    pos: chosen.pos,
-    queryMatched: true,
-    formLine: lines[occurrences[0]],
-    confidence: bestDistance <= 4 ? 'high' : 'medium'
-  };
+  return out.join(' ').slice(0,500)||NO_INFO;
 }
 
-function extractLemmaFromBlock(blockText, pos) {
-  const lines = blockText.split(/\n+/).map(normalizeText).filter(Boolean);
-  const posIndex = lines.findIndex(line => detectPos(line) === pos);
-  if (posIndex < 0) return NO_INFO;
-
-  // Prefer a standalone headword immediately before the POS line.
-  for (let i = posIndex - 1; i >= Math.max(0, posIndex - 4); i--) {
-    const candidate = lines[i].replace(/^[•·*-]\s*/, '').trim();
-    if (isWordLine(candidate)) return candidate;
-  }
-
-  // Fallback: headword may be on the same line as the POS marker.
-  const sameLine = lines[posIndex].match(/^([А-ЯЁа-яё][А-ЯЁа-яё́-]{1,})\s+Существительное\b/i)
-    || lines[posIndex].match(/^([А-ЯЁа-яё][А-ЯЁа-яё́-]{1,})\s+Глагол\b/i)
-    || lines[posIndex].match(/^([А-ЯЁа-яё][А-ЯЁа-яё́-]{1,})\s+Прилагательное\b/i)
-    || lines[posIndex].match(/^([А-ЯЁа-яё][А-ЯЁа-яё́-]{1,})\s+Наречие\b/i);
-  return sameLine?.[1] ? normalizeText(sameLine[1]) : NO_INFO;
-}
-
-function extractDefinition(text, pos) {
-  const lines = text.split(/\n+/).map(normalizeText).filter(Boolean);
-  const posIndex = lines.findIndex(line => detectPos(line) === pos);
-  if (posIndex < 0) return NO_INFO;
-  const tail = lines.slice(posIndex + 1);
-  const stop = tail.findIndex(line => /^(?:Всё об этом слове|Метасловарь|Найдено \d+ словар)/i.test(line));
-  const candidateLines = (stop >= 0 ? tail.slice(0, stop) : tail).filter(line =>
-    !/^(?:ед\.|мн\.)\s+число|^Словари$|^Везде$|^Точное соответствие$|^Все формы слова$/i.test(line)
-  );
-  const candidate = candidateLines.join(' ').trim();
-  return candidate.length >= 2 ? candidate.slice(0, 500) : NO_INFO;
-}
-
-function extractNoun(text) {
-  return {
-    lemma: extractLemmaFromBlock(text, 'noun'),
-    gender: firstMatch(text, [/(?:Существительное,\s*)(мужской|женский|средний) род/i]),
-    declension: firstMatch(text, [/(\d-е склонение)/i]),
-    stress: firstMatch(text, [/([А-ЯЁа-яё]+[́])(?:\s|,|$)/i]),
-  };
-}
-
-function extractVerb(text) {
-  return {
-    lemma: extractLemmaFromBlock(text, 'verb'),
-    aspect: firstMatch(text, [/Глагол,\s*([^,.;]{1,80}?вид)/i]),
-    transitivity: firstMatch(text, [/(переходный|непереходный)/i]),
-  };
-}
-
-function extractAdjective(text) {
-  return {
-    lemma: extractLemmaFromBlock(text, 'adjective'),
-    type: firstMatch(text, [/Прилагательное,\s*([^.;]{1,100})/i]),
-    stress: firstMatch(text, [/([А-ЯЁа-яё]+[́])(?:\s|,|$)/i]),
-  };
-}
-
-function extractAdverb(text) {
-  return {
-    lemma: extractLemmaFromBlock(text, 'adverb'),
-    stress: firstMatch(text, [/([А-ЯЁа-яё]+[́])(?:\s|,|$)/i]),
-  };
-}
-
-function extractFields(text, pos, query) {
-  let fields = {};
-  if (pos === 'noun') fields = extractNoun(text);
-  if (pos === 'verb') fields = extractVerb(text);
-  if (pos === 'adjective') fields = extractAdjective(text);
-  if (pos === 'adverb') fields = extractAdverb(text);
-  if (!fields.lemma || fields.lemma === NO_INFO) fields.lemma = NO_INFO;
-  fields.meaning = extractDefinition(text, pos);
-  fields.query = query;
-  fields.pos = pos;
-  return fields;
-}
-
-async function fetchGramotaPage(target) {
-  // 1) Try Gramota directly first.
-  const direct = await fetch(target, {
-    headers:{
-      'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/153.0 Safari/537.36',
-      'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language':'ru-RU,ru;q=0.9,en-US;q=0.7,en;q=0.5',
-      'Referer':'https://gramota.ru/'
+const CASES=[
+  ['именительный','주격'],['родительный','생격'],['дательный','여격'],['винительный','대격'],['творительный','조격'],['предложный','전치격']
+];
+const CASE_RE=new RegExp('^(?:'+CASES.map(x=>x[0]).join('|')+')(?:\\s+падеж)?$','i');
+function isCaseLine(x){return CASE_RE.test(normalizeText(x));}
+function isNumberLine(x){return /^(?:ед\.?\s*число|единственное число|ед\. число|мн\.?\s*число|множественное число)$/i.test(x);}
+function isGrammarNoise(x){return /^(?:Существительное|Прилагательное|Глагол|Наречие|Словари|Все формы слова|Всё об этом слове|мужской род|женский род|средний род|1-е склонение|2-е склонение|3-е склонение)$/i.test(x);}
+function parseCaseForms(text, {adjective=false}={}){
+  const lines=splitLines(text), out={}; let number='singular', current=null;
+  for(let i=0;i<lines.length;i++){
+    const line=lines[i];
+    if(/^мн\.?\s*число|^множественное число/i.test(line)){number='plural';continue;}
+    if(/^ед\.?\s*число|^единственное число/i.test(line)){number='singular';continue;}
+    const cm=CASES.find(c=>new RegExp('^'+c[0]+'(?:\\s+падеж)?$','i').test(line));
+    if(cm){current=cm[0]; if(!out[current])out[current]={singular:NO_INFO,plural:NO_INFO}; continue;}
+    if(!current||isGrammarNoise(line)||/^\d/.test(line)||/^(?:разговорное|книжное|устарелое)/i.test(line))continue;
+    if(isWordLine(line) && !line.includes(' ')){
+      if(out[current][number]===NO_INFO)out[current][number]=line;
     }
-  });
-
-  if (direct.ok) {
-    return { html: await direct.text(), via: 'direct' };
   }
-
-  // Render's outbound IP is being rate-limited by Gramota (HTTP 429).
-  // Fall back to Jina Reader only as a transport/proxy: the target remains
-  // the Gramota dictionary page, and no alternative dictionary is substituted.
-  if (direct.status !== 429) {
-    throw new Error('Gramota 응답 오류: HTTP ' + direct.status);
-  }
-
-  const proxyResponse = await fetch('https://r.jina.ai/', {
-    method:'POST',
-    headers:{
-      'Content-Type':'application/x-www-form-urlencoded',
-      'Accept':'text/html',
-      'X-Respond-With':'html'
-    },
-    body:'url=' + encodeURIComponent(target)
-  });
-
-  if (!proxyResponse.ok) {
-    throw new Error('Gramota 응답 오류: 직접 접속 HTTP 429, 대체 접속도 실패 (HTTP ' + proxyResponse.status + ')');
-  }
-
-  return { html: await proxyResponse.text(), via: 'jina-proxy' };
+  return out;
 }
+function formatCaseTable(t){return CASES.map(([ru,ko])=>({case:ko,singular:t[ru]?.singular||NO_INFO,plural:t[ru]?.plural||NO_INFO}));}
 
-async function gramota(q) {
-  // Use Gramota's dictionary-only search. This is the same search surface
-  // that exposes the lexical entries under "Словари" and is less noisy
-  // than the general "mode=all" page.
-  const target = 'https://gramota.ru/poisk?mode=slovari&query=' + encodeURIComponent(q) + '&simple=0';
-  const fetched = await fetchGramotaPage(target);
-  const text = stripHtml(fetched.html);
-  const selected = findRelevantBlock(text, q);
-  const block = selected.text;
-  const pos = selected.pos;
-  const fields = (selected.queryMatched && pos !== 'unknown')
-    ? extractFields(block, pos, q)
-    : {lemma:NO_INFO, meaning:NO_INFO, query:q, pos:'unknown'};
-
-  return {
-    ok:true,
-    query:q,
-    lemma:fields.lemma || NO_INFO,
-    pos,
-    posLabel:posLabel(pos),
-    confidence:selected.confidence,
-    inflected: selected.queryMatched && pos !== 'unknown' && fields.lemma !== NO_INFO && normalizeForMatch(fields.lemma) !== normalizeForMatch(q),
-    queryMatched: selected.queryMatched,
-    matchedForm: selected.formLine,
-    fields,
-    pipeline:{
-      input:q,
-      gramotaSearch:true,
-      queryMatched:selected.queryMatched,
-      posDetected:pos !== 'unknown',
-      lemmaResolved:fields.lemma !== NO_INFO,
-      fieldsExtracted:Object.fromEntries(Object.entries(fields).filter(([k,v]) => !['query','pos'].includes(k)).map(([k,v]) => [k, v !== NO_INFO])),
-      completed:true,
-      transport:fetched.via
-    },
-    snippet:block ? block.slice(0, 2200) : NO_INFO,
-    source:target,
-    transport:fetched.via
+function accentWord(s){return s||NO_INFO;}
+function extractNoun(text){
+  const lemma=extractLemmaFromBlock(text,'noun');
+  return {lemma,meaningRu:extractDefinition(text,'noun'),gender:firstMatch(text,[/(?:Существительное,\s*)(мужской|женский|средний) род/i]),declension:firstMatch(text,[/(\d-е склонение)/i]),cases:formatCaseTable(parseCaseForms(text))};
+}
+function extractVerbConjugation(text){
+  const lines=splitLines(text), out={
+    '1인칭 단수':NO_INFO,'2인칭 단수':NO_INFO,'3인칭 단수':NO_INFO,
+    '1인칭 복수':NO_INFO,'2인칭 복수':NO_INFO,'3인칭 복수':NO_INFO
   };
+  let person=null, number='singular';
+  const pmap={'1-е лицо':'1','2-е лицо':'2','3-е лицо':'3'};
+  for(let i=0;i<lines.length;i++){
+    const l=lines[i]; if(/^мн\.?\s*число|^множественное число/i.test(l)){number='plural';continue;} if(/^ед\.?\s*число|^единственное число/i.test(l)){number='singular';continue;}
+    const pm=l.match(/^(1-е|2-е|3-е) лицо/i); if(pm){person=pmap[pm[1]];continue;}
+    if(person&&isWordLine(l)&&!isGrammarNoise(l)){
+      const key=person+'인칭 '+(number==='singular'?'단수':'복수'); if(out[key]===NO_INFO)out[key]=l;
+    }
+  }
+  return out;
+}
+function extractVerb(text){
+  const aspect=firstMatch(text,[/(совершенный|несовершенный) вид/i]);
+  const mobility=/\b(?:идти|ходить|ехать|ездить|бежать|бегать|нести|носить|вести|водить|лететь|летать|плыть|плавать|ползти|полза́ть)\b/i.test(text);
+  return {lemma:extractLemmaFromBlock(text,'verb'),meaningRu:extractDefinition(text,'verb'),conjugationType:firstMatch(text,[/(\d-е спряжение)/i]),conjugation:extractVerbConjugation(text),aspect,aspectPair:extractAspectPair(text),motionType:mobility?extractMotionType(text):NO_INFO};
+}
+function extractAspectPair(text){
+  const m=text.match(/(?:видовая пара|видовая корреляция|пара)\s*[:—-]?\s*([А-ЯЁа-яё́-]+)/i); return m?m[1]:NO_INFO;
+}
+function extractMotionType(text){
+  const m=text.match(/\b(однонаправленн(?:ый|ое)|разнонаправленн(?:ый|ое)|однократн(?:ое|ая)|многократн(?:ое|ая))\b/i);
+  if(!m)return NO_INFO;
+  return /разнонаправ|многократ/i.test(m[1])?'부정태':'정태';
+}
+function extractAdjective(text){
+  return {lemma:extractLemmaFromBlock(text,'adjective'),meaningRu:extractDefinition(text,'adjective'),cases:formatCaseTable(parseCaseForms(text,{adjective:true}))};
+}
+function extractAdverb(text){return {lemma:extractLemmaFromBlock(text,'adverb'),meaningRu:extractDefinition(text,'adverb')};}
+
+async function translateToKorean(russian){
+  if(!russian||russian===NO_INFO)return NO_INFO;
+  try{
+    const u='https://translate.googleapis.com/translate_a/single?client=gtx&sl=ru&tl=ko&dt=t&q='+encodeURIComponent(russian.slice(0,800));
+    const r=await fetch(u,{headers:{'User-Agent':'Mozilla/5.0'}});
+    if(!r.ok)return NO_INFO;
+    const j=await r.json();
+    const translated=(j?.[0]||[]).map(x=>x?.[0]||'').join('').trim();
+    return translated||NO_INFO;
+  }catch{return NO_INFO;}
 }
 
-const server = http.createServer(async (req,res)=>{
-  try {
-    const u = new URL(req.url, 'http://localhost');
-    if (u.pathname === '/api/gramota') {
-      const q = (u.searchParams.get('q') || '').trim();
-      if (!q) return send(res,400,JSON.stringify({ok:false,error:'검색어가 없습니다.'}),'application/json; charset=utf-8');
-      const data = await gramota(q);
-      return send(res,200,JSON.stringify(data),'application/json; charset=utf-8');
+async function fetchDirect(target){
+  const r=await fetch(target,{headers:{
+    'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/153.0 Safari/537.36',
+    'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language':'ru-RU,ru;q=0.9,en-US;q=0.7,en;q=0.5',
+    'Referer':'https://gramota.ru/'
+  }});
+  return r;
+}
+
+async function fetchViaJina(target){
+  const jinaUrl='https://r.jina.ai/'+target;
+  let r=await fetch(jinaUrl,{headers:{'User-Agent':'Mozilla/5.0','Accept':'text/plain,text/html;q=0.9,*/*;q=0.8'}});
+  if(r.ok)return {html:await r.text(),via:'jina-reader'};
+  // Fallback for Reader deployments that require POST.
+  r=await fetch('https://r.jina.ai/',{method:'POST',headers:{
+    'Content-Type':'application/x-www-form-urlencoded',
+    'Accept':'text/plain,text/html;q=0.9,*/*;q=0.8',
+    'User-Agent':'Mozilla/5.0'
+  },body:'url='+encodeURIComponent(target)});
+  if(r.ok)return {html:await r.text(),via:'jina-reader-post'};
+  throw new Error('Gramota 중계 접속 실패 (HTTP '+r.status+')');
+}
+
+async function fetchGramotaPage(target){
+  try{
+    const direct=await fetchDirect(target);
+    if(direct.ok)return {html:await direct.text(),via:'direct'};
+    if(direct.status!==429)throw new Error('Gramota 응답 오류: HTTP '+direct.status);
+  }catch(e){
+    if(!String(e.message||'').includes('429')) throw e;
+  }
+  return fetchViaJina(target);
+}
+
+function extractMetaLinks(html, query){
+  const links=[];
+  const re=/<a\b[^>]*href=["']([^"']*\/meta\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while((m=re.exec(html))){
+    const href=decodeEntities(m[1]);
+    const label=stripHtml(m[2]);
+    if(!/\/meta\//i.test(href))continue;
+    links.push({href,label});
+  }
+  // Jina Reader normally returns Markdown links instead of raw HTML anchors.
+  const md=/\[([^\]\n]+)\]\((https?:\/\/gramota\.ru\/meta\/[^)]+)\)/gi;
+  while((m=md.exec(html))){
+    links.push({href:decodeEntities(m[2]),label:stripHtml(m[1])});
+  }
+  const nq=normalizeForMatch(query);
+  const score=x=>{
+    const nl=normalizeForMatch(x.label);
+    let s=0;
+    if(nl===nq)s+=100;
+    if(nl.replace(/\s+/g,'')===nq.replace(/\s+/g,''))s+=50;
+    if(nl.includes(nq)||nq.includes(nl))s+=20;
+    return s;
+  };
+  return links.sort((a,b)=>score(b)-score(a));
+}
+
+function absoluteGramotaUrl(href){
+  if(/^https?:\/\//i.test(href))return href;
+  if(href.startsWith('//'))return 'https:'+href;
+  return 'https://gramota.ru'+(href.startsWith('/')?href:'/ '+href).replace('/ ','/');
+}
+
+async function resolveMetaPage(searchHtml, query){
+  const candidates=extractMetaLinks(searchHtml,query);
+  if(!candidates.length)return null;
+  for(const c of candidates.slice(0,5)){
+    const url=absoluteGramotaUrl(c.href);
+    try{
+      const page=await fetchGramotaPage(url);
+      return {url,html:page.html,via:page.via,linkLabel:c.label};
+    }catch{}
+  }
+  return null;
+}
+
+async function gramota(q){
+  const searchTarget='https://gramota.ru/poisk?query='+encodeURIComponent(q)+'&mode=all';
+  const searchFetched=await fetchGramotaPage(searchTarget);
+  // Important: follow the actual /meta/... link from the Gramota search result.
+  // We do not manufacture /meta/<word> because inflected inputs can resolve to another lemma.
+  const meta=await resolveMetaPage(searchFetched.html,q);
+  const selectedSource=meta||searchFetched;
+  const text=stripHtml(selectedSource.html);
+  const selected=findRelevantBlock(text,q);
+  if(!selected.queryMatched||selected.pos==='unknown'){
+    return {ok:true,query:q,pos:'unknown',posLabel:'판별 불가',fields:{meaning:NO_INFO},metaUrl:meta?.url||null};
+  }
+  let fields;
+  if(selected.pos==='noun')fields=extractNoun(selected.text);
+  else if(selected.pos==='verb')fields=extractVerb(selected.text);
+  else if(selected.pos==='adjective')fields=extractAdjective(selected.text);
+  else fields=extractAdverb(selected.text);
+  fields.meaning=await translateToKorean(fields.meaningRu);
+  delete fields.meaningRu;
+  return {ok:true,query:q,lemma:fields.lemma,pos:selected.pos,posLabel:posLabel(selected.pos),fields,metaUrl:meta?.url||null,transport:meta?.via||searchFetched.via};
+}
+
+const server=http.createServer(async(req,res)=>{
+  try{
+    const u=new URL(req.url,'http://localhost');
+    if(u.pathname==='/api/gramota'){
+      const q=(u.searchParams.get('q')||'').trim(); if(!q)return send(res,400,JSON.stringify({ok:false,error:'검색어가 없습니다.'}),'application/json; charset=utf-8');
+      const data=await gramota(q); return send(res,200,JSON.stringify(data),'application/json; charset=utf-8');
     }
-    if (u.pathname === '/api/health') {
-      return send(res,200,JSON.stringify({ok:true,version:'2.2.0',source:'Gramota'}),'application/json; charset=utf-8');
-    }
-    if (u.pathname === '/' || u.pathname === '/index.html') {
-      const html = fs.readFileSync(path.join(ROOT,'index.html'));
-      return send(res,200,html,'text/html; charset=utf-8');
-    }
+    if(u.pathname==='/api/health')return send(res,200,JSON.stringify({ok:true,version:'2.4.0',source:'Gramota'}),'application/json; charset=utf-8');
+    if(u.pathname==='/'||u.pathname==='/index.html')return send(res,200,fs.readFileSync(path.join(ROOT,'index.html')),'text/html; charset=utf-8');
     return send(res,404,'Not found');
-  } catch (e) {
-    return send(res,502,JSON.stringify({ok:false,error:e.message || 'Gramota 연결 실패'}),'application/json; charset=utf-8');
-  }
+  }catch(e){return send(res,502,JSON.stringify({ok:false,error:e.message||'검색 실패'}),'application/json; charset=utf-8');}
 });
-
-if (require.main === module) {
-  server.listen(PORT, HOST, ()=>console.log(`Russian Learning Tool V2.2: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`));
-}
-
-module.exports = {
-  NO_INFO, decodeEntities, stripHtml, normalizeText, normalizeForMatch, detectPos, posLabel,
-  firstMatch, isWordLine, findPosEntries, findRelevantBlock, extractLemmaFromBlock,
-  extractDefinition, extractNoun, extractVerb, extractAdjective, extractAdverb, extractFields, gramota
-};
+if(require.main===module)server.listen(PORT,HOST,()=>console.log(`Russian Learning Tool V2.3: http://${HOST==='0.0.0.0'?'localhost':HOST}:${PORT}`));
+module.exports={NO_INFO,decodeEntities,stripHtml,normalizeText,normalizeForMatch,detectPos,posLabel,isWordLine,splitLines,findGramotaDictionaryBlock,findRelevantBlock,extractMetaLinks,extractLemmaFromBlock,extractDefinition,parseCaseForms,extractNoun,extractVerb,extractAdjective,extractAdverb,translateToKorean,gramota};
