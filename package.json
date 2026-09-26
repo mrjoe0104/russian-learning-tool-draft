@@ -1,8 +1,8 @@
 {
   "name": "russian-learning-tool",
-  "version": "1.9.0",
+  "version": "2.4.0",
   "private": true,
-  "description": "Online-ready Russian learning tool: Gramota search -> result selection -> POS -> lemma -> field extraction -> no-info handling",
+  "description": "Online-ready Russian learning tool: Gramota search -> Gramota search -> actual /meta link -> detailed page -> POS -> field extraction -> no-info handling",
   "scripts": {
     "start": "node server.js",
     "test": "node test_parser.js"
