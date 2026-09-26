@@ -278,7 +278,7 @@ function extractMetaAdjectiveTable(raw=''){
   return out;
 }
 
-function extractMetaStructured(text){
+function extractMetaStructured(text, fallbackLemma=NO_INFO){
   const raw=String(text||'');
   const cleanedRaw=raw.replace(/\r/g,'');
   const lines=splitLines(stripHtml(cleanedRaw).split('\n').map(x=>cleanMarkdownLine(x)).join('\n'));
@@ -286,8 +286,12 @@ function extractMetaStructured(text){
 
   const headingMd=cleanedRaw.match(/(?:^|\n)#+\s*(?:\[([^\]]+)\]\([^)]*\)|([^\n]+))/);
   if(headingMd) out.lemma=normalizeText(stripHtml(headingMd[1]||headingMd[2]||''));
+  if(/^(?:Справочная|Справочник|Словари|Метасловарь)$/i.test(out.lemma)) out.lemma=NO_INFO;
+  if(out.lemma===NO_INFO && fallbackLemma && fallbackLemma!==NO_INFO){
+    out.lemma=normalizeText(fallbackLemma);
+  }
   if(out.lemma===NO_INFO){
-    const first=lines.find(x=>/^[А-ЯЁа-яё][А-ЯЁа-яё́-]{1,}$/.test(x));
+    const first=lines.find(x=>/^[А-ЯЁа-яё][А-ЯЁа-яё́-]{1,}$/.test(x) && !/^(?:Справочная|Справочник|Словари|Метасловарь)$/i.test(x));
     if(first) out.lemma=first;
   }
 
@@ -314,8 +318,8 @@ function extractMetaStructured(text){
   }
   return out;
 }
-function extractNoun(text, metaRaw=''){
-  const meta=metaRaw?extractMetaStructured(metaRaw):{lemma:NO_INFO,gender:NO_INFO,cases:{},meaning:NO_INFO};
+function extractNoun(text, metaRaw='', fallbackLemma=NO_INFO){
+  const meta=metaRaw?extractMetaStructured(metaRaw,fallbackLemma):{lemma:NO_INFO,gender:NO_INFO,cases:{},meaning:NO_INFO};
   const compact=extractCompactCaseForms(text);
   const parsed=parseCaseForms(text);
   const metaCases=meta.cases||{};
@@ -360,8 +364,8 @@ function extractMotionType(text){
 function formatAdjectiveTable(t){
   return CASES.map(([ru,ko])=>({case:ko,masculine:t[ru]?.masculine||NO_INFO,feminine:t[ru]?.feminine||NO_INFO,neuter:t[ru]?.neuter||NO_INFO,plural:t[ru]?.plural||NO_INFO}));
 }
-function extractAdjective(text, metaRaw=''){
-  const meta=metaRaw?extractMetaStructured(metaRaw):{lemma:NO_INFO,meaning:NO_INFO,cases:{},adjectiveCases:{}};
+function extractAdjective(text, metaRaw='', fallbackLemma=NO_INFO){
+  const meta=metaRaw?extractMetaStructured(metaRaw,fallbackLemma):{lemma:NO_INFO,meaning:NO_INFO,cases:{},adjectiveCases:{}};
   const cases=Object.keys(meta.adjectiveCases||{}).length?formatAdjectiveTable(meta.adjectiveCases):formatCaseTable(parseCaseForms(text,{adjective:true}));
   return {lemma:meta.lemma!==NO_INFO?meta.lemma:extractLemmaFromBlock(text,'adjective'),meaningRu:meta.meaning!==NO_INFO?meta.meaning:extractDefinition(text,'adjective'),cases};
 }
@@ -372,7 +376,7 @@ async function translateToKorean(russian){
   const q=String(russian).trim().slice(0,500);
   try{
     const url='https://api.mymemory.translated.net/get?q='+encodeURIComponent(q)+'&langpair=ru|ko';
-    const r=await fetch(url,{headers:{'User-Agent':'Mozilla/5.0 Russian-Learning-Tool/2.8','Accept':'application/json'}});
+    const r=await fetch(url,{headers:{'User-Agent':'Mozilla/5.0 Russian-Learning-Tool/2.9','Accept':'application/json'}});
     if(r.ok){
       const j=await r.json();
       const translated=String(j?.responseData?.translatedText||'').trim();
@@ -381,7 +385,7 @@ async function translateToKorean(russian){
   }catch{}
   try{
     const url='https://translate.googleapis.com/translate_a/single?client=gtx&sl=ru&tl=ko&dt=t&q='+encodeURIComponent(q);
-    const r=await fetch(url,{headers:{'User-Agent':'Mozilla/5.0 Russian-Learning-Tool/2.8','Accept':'application/json,text/plain,*/*'}});
+    const r=await fetch(url,{headers:{'User-Agent':'Mozilla/5.0 Russian-Learning-Tool/2.9','Accept':'application/json,text/plain,*/*'}});
     if(r.ok){
       const j=await r.json();
       const translated=Array.isArray(j?.[0])?j[0].map(x=>Array.isArray(x)?x[0]:'').join('').trim():'';
@@ -485,9 +489,9 @@ async function gramota(q){
     return {ok:true,query:q,pos:'unknown',posLabel:'판별 불가',fields:{meaning:NO_INFO},metaUrl:meta?.url||null};
   }
   let fields;
-  if(selected.pos==='noun')fields=extractNoun(selected.text, meta?.html||'');
+  if(selected.pos==='noun')fields=extractNoun(selected.text, meta?.html||'', meta?.linkLabel||NO_INFO);
   else if(selected.pos==='verb')fields=extractVerb(selected.text);
-  else if(selected.pos==='adjective')fields=extractAdjective(selected.text, meta?.html||'');
+  else if(selected.pos==='adjective')fields=extractAdjective(selected.text, meta?.html||'', meta?.linkLabel||NO_INFO);
   else fields=extractAdverb(selected.text);
   fields.meaning=await translateToKorean(fields.lemma!==NO_INFO?fields.lemma:fields.meaningRu);
   delete fields.meaningRu;
@@ -501,7 +505,7 @@ const server=http.createServer(async(req,res)=>{
       const q=(u.searchParams.get('q')||'').trim(); if(!q)return send(res,400,JSON.stringify({ok:false,error:'검색어가 없습니다.'}),'application/json; charset=utf-8');
       const data=await gramota(q); return send(res,200,JSON.stringify(data),'application/json; charset=utf-8');
     }
-    if(u.pathname==='/api/health')return send(res,200,JSON.stringify({ok:true,version:'2.8.0',source:'Gramota'}),'application/json; charset=utf-8');
+    if(u.pathname==='/api/health')return send(res,200,JSON.stringify({ok:true,version:'2.9.0',source:'Gramota'}),'application/json; charset=utf-8');
     if(u.pathname==='/'||u.pathname==='/index.html')return send(res,200,fs.readFileSync(path.join(ROOT,'index.html')),'text/html; charset=utf-8');
     return send(res,404,'Not found');
   }catch(e){return send(res,502,JSON.stringify({ok:false,error:e.message||'검색 실패'}),'application/json; charset=utf-8');}
