@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>러시아어 학습 도구 앱 · V1.9</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f5f5f5;color:#222;font-family:Arial,sans-serif}.wrap{width:min(900px,92%);margin:0 auto;padding:70px 0 50px}h1{text-align:center;margin:0 0 10px;font-size:32px}.version{text-align:center;color:#777;font-size:13px;margin-bottom:28px}.search{display:flex;gap:10px}.search input{flex:1;height:52px;padding:0 16px;border:1px solid #ccc;border-radius:10px;background:#fff;font-size:18px;outline:none}.search input:focus{border-color:#777}.search button{height:52px;padding:0 22px;border:0;border-radius:10px;background:#222;color:#fff;font-size:16px;cursor:pointer}.search button:disabled{opacity:.5;cursor:wait}.examples{text-align:center;color:#777;font-size:14px;margin:12px 0 28px}.result{margin-top:20px}.card{background:#fff;border:1px solid #ddd;border-radius:14px;padding:22px;margin-bottom:16px}.head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.lemma{font-size:30px;font-weight:700}.pos{font-size:14px;color:#666;background:#eee;padding:5px 9px;border-radius:8px}.meaning{font-size:18px;margin-top:12px}.meta{color:#555;margin-top:10px;line-height:1.7}.section{margin-top:22px}.section h3{font-size:17px;margin:0 0 10px}.note{color:#777;font-size:13px;margin-top:10px}.notfound{text-align:center;color:#777;padding:28px}.status{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border-radius:8px;background:#f1f1f1;font-size:13px}.status.ok{background:#eaf6ed}.status.error{background:#fbeaea}.source{margin-top:16px}.source a{color:#3157a6}.raw{white-space:pre-wrap;background:#fafafa;border:1px solid #eee;border-radius:10px;padding:14px;max-height:260px;overflow:auto;font-size:13px;line-height:1.55}.template-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.template-grid>div{padding:10px;background:#f7f7f7;border-radius:8px;color:#555}.table{width:100%;border-collapse:collapse}.table th,.table td{border:1px solid #ddd;padding:8px;text-align:center}.table th{background:#f1f1f1;font-weight:600}@media(max-width:600px){.search{flex-direction:column}.search button{width:100%}.template-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>러시아어 학습 도구 앱</h1>
+<div class="version">V1.9 · 온라인 배포용 · Gramota 검색 → 판정 → 원형 → 품사별 정보 → 최종 출력</div>
+<div class="search">
+  <input id="searchInput" type="text" placeholder="러시아어 단어를 입력하세요" autocomplete="off" spellcheck="false">
+  <button id="searchBtn">검색</button>
+  <button id="gramotaBtn" type="button">Gramota 원문</button>
+</div>
+<div class="examples">어떤 러시아어 단어든 입력할 수 있습니다. 단어별 데이터를 앱에 미리 저장하지 않습니다.</div>
+<div id="result" class="result"></div>
+
+<div class="card">
+  <h2>V1.9 전체 파이프라인</h2>
+  <div class="template-grid">
+    <div>① 사용자 입력</div><div>② Gramota 검색</div>
+    <div>③ 검색 결과 확인</div><div>④ 관련 품사 선택</div>
+    <div>⑤ 활용형 → 원형 확인</div><div>⑥ 품사별 정보 추출</div>
+    <div>⑦ 정보 없음 처리</div><div>⑧ 최종 결과 출력</div>
+  </div>
+  <p class="note">모든 단계는 Gramota에서 확인되는 정보만 사용합니다. 확인되지 않는 값은 추측하지 않고 <b>정보 없음</b>으로 표시합니다.</p>
+</div>
+
+<div class="card">
+  <h2>품사별 출력 형식</h2>
+  <div class="section"><h3>명사</h3><div class="template-grid"><div>원형: 정보 없음</div><div>뜻: 정보 없음</div><div>강세: 정보 없음</div><div>성/변화: 정보 없음</div></div><div class="section"><table class="table"><tr><th>격</th><th>단수</th><th>복수</th></tr><tr><td>주격</td><td>정보 없음</td><td>정보 없음</td></tr><tr><td>생격</td><td>정보 없음</td><td>정보 없음</td></tr><tr><td>여격</td><td>정보 없음</td><td>정보 없음</td></tr><tr><td>대격</td><td>정보 없음</td><td>정보 없음</td></tr><tr><td>조격</td><td>정보 없음</td><td>정보 없음</td></tr><tr><td>전치격</td><td>정보 없음</td><td>정보 없음</td></tr></table></div></div>
+  <div class="section"><h3>동사</h3><div class="template-grid"><div>원형: 정보 없음</div><div>뜻: 정보 없음</div><div>강세: 정보 없음</div><div>활용: 정보 없음</div><div>상: 정보 없음</div><div>상 대응: 정보 없음</div></div></div>
+  <div class="section"><h3>형용사</h3><div class="template-grid"><div>원형: 정보 없음</div><div>뜻: 정보 없음</div><div>강세: 정보 없음</div></div></div>
+  <div class="section"><h3>부사</h3><div class="template-grid"><div>원형: 정보 없음</div><div>뜻: 정보 없음</div><div>강세: 정보 없음</div></div></div>
+</div>
+</div>
+<script>
+const input=document.getElementById('searchInput');
+const result=document.getElementById('result');
+const searchBtn=document.getElementById('searchBtn');
+const gramotaBtn=document.getElementById('gramotaBtn');
+const POS_LABELS={noun:'명사',verb:'동사',adjective:'형용사',adverb:'부사',unknown:'판별 불가'};
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function gramotaUrl(q){return 'https://gramota.ru/poisk?query='+encodeURIComponent(q)+'&mode=all';}
+function val(v){return v&&v!=='정보 없음'?esc(v):'<span class="note">정보 없음</span>';}
+function renderFields(data){
+  const f=data.fields||{};
+  const pos=data.pos;
+  if(pos==='noun') return `<div class="section"><h3>명사 정보</h3><div class="template-grid"><div>원형: ${val(f.lemma)}</div><div>뜻: ${val(f.meaning)}</div><div>강세: ${val(f.stress)}</div><div>성: ${val(f.gender)}</div><div>변화: ${val(f.declension)}</div></div><p class="note">입력한 형태가 활용형이면 Gramota가 표시한 원형과 연결합니다.</p></div>`;
+  if(pos==='verb') return `<div class="section"><h3>동사 정보</h3><div class="template-grid"><div>원형: ${val(f.lemma)}</div><div>뜻: ${val(f.meaning)}</div><div>상: ${val(f.aspect)}</div><div>타동성: ${val(f.transitivity)}</div></div><p class="note">입력한 과거형 등은 Gramota가 연결해 준 동사 원형을 사용합니다.</p></div>`;
+  if(pos==='adjective') return `<div class="section"><h3>형용사 정보</h3><div class="template-grid"><div>원형: ${val(f.lemma)}</div><div>뜻: ${val(f.meaning)}</div><div>종류/문법 정보: ${val(f.type)}</div><div>강세: ${val(f.stress)}</div></div></div>`;
+  if(pos==='adverb') return `<div class="section"><h3>부사 정보</h3><div class="template-grid"><div>원형: ${val(f.lemma)}</div><div>뜻: ${val(f.meaning)}</div><div>강세: ${val(f.stress)}</div></div></div>`;
+  return `<div class="section"><div class="status">품사 정보를 확인하지 못했습니다.</div></div>`;
+}
+function renderError(message,q){result.innerHTML='<div class="card"><div class="head"><div class="lemma">'+esc(q)+'</div><div class="pos">오류</div></div><div class="meaning">'+esc(message)+'</div><div class="source"><a href="'+gramotaUrl(q)+'" target="_blank" rel="noopener noreferrer">Gramota에서 직접 확인하기</a></div><p class="note">서버가 실행 중인지 확인한 뒤 다시 시도하세요. 온라인 배포판에서는 이 과정이 자동으로 처리됩니다.</p></div>';}
+function renderPipeline(data){
+  const p=data.pipeline||{};
+  const yes=v=>v?'완료':'정보 없음';
+  return `<div class="section"><h3>처리 과정</h3><div class="template-grid">
+    <div>입력: ${yes(!!p.input)}</div><div>Gramota 검색: ${yes(p.gramotaSearch)}</div>
+    <div>검색어 확인: ${yes(p.queryMatched)}</div><div>품사 판별: ${yes(p.posDetected)}</div>
+    <div>원형 확인: ${yes(p.lemmaResolved)}</div><div>정보 추출: ${yes(Object.values(p.fieldsExtracted||{}).some(Boolean))}</div>
+    <div>최종 처리: ${yes(p.completed)}</div><div>추측 사용: <b>없음</b></div>
+  </div></div>`;
+}
+function renderResult(data,q){
+  const pos=POS_LABELS[data.pos]||POS_LABELS.unknown;
+  const ok=data.pos&&data.pos!=='unknown';
+  const lemma=data.lemma&&data.lemma!=='정보 없음'?data.lemma:q;
+  result.innerHTML='<div class="card"><div class="head"><div class="lemma">'+esc(lemma)+'</div><div class="pos">'+esc(pos)+'</div></div>'+ 
+    '<div class="meaning"><span class="status '+(ok?'ok':'')+'">'+(ok?'품사 판별 완료':'품사 판별 정보 없음')+'</span></div>'+ 
+    '<div class="meta">입력: <b>'+esc(q)+'</b><br>Gramota에서 감지된 품사: <b>'+esc(pos)+'</b>'+(data.inflected?'<br>활용형 → 원형 연결: <b>Gramota 확인</b>':'')+(data.matchedForm&&data.matchedForm!=='정보 없음'?'<br>Gramota 확인 형태: <b>'+esc(data.matchedForm)+'</b>':'')+(data.confidence?'<br>판정 신뢰 상태: <b>'+esc(data.confidence)+'</b>':'')+'</div>'+ 
+    renderPipeline(data)+
+    renderFields(data)+
+    (data.snippet?'<div class="section"><h3>Gramota 결과 근거</h3><div class="raw">'+esc(data.snippet)+'</div></div>':'')+
+    '<div class="source"><a href="'+gramotaUrl(q)+'" target="_blank" rel="noopener noreferrer">Gramota 원문 열기</a></div></div>';
+}
+async function search(){
+  const q=input.value.trim();
+  if(!q){result.innerHTML='<div class="card notfound">검색어를 입력하세요.</div>';return;}
+  searchBtn.disabled=true; result.innerHTML='<div class="card notfound">Gramota에서 검색하고 정보를 추출하는 중…</div>';
+  try{
+    const r=await fetch('/api/gramota?q='+encodeURIComponent(q),{headers:{'Accept':'application/json'}});
+    const data=await r.json();
+    if(!r.ok||!data.ok) throw new Error(data.error||'Gramota 검색에 실패했습니다.');
+    renderResult(data,q);
+  }catch(e){renderError(e.message||'검색 중 오류가 발생했습니다.',q);}finally{searchBtn.disabled=false;}
+}
+searchBtn.addEventListener('click',search);
+input.addEventListener('keydown',e=>{if(e.key==='Enter')search()});
+gramotaBtn.addEventListener('click',()=>{const q=input.value.trim();if(q)window.open(gramotaUrl(q),'_blank','noopener,noreferrer');else input.focus();});
+</script>
+</body>
+</html>
