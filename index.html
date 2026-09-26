@@ -18,7 +18,7 @@
 const input=document.getElementById('searchInput'), result=document.getElementById('result'), btn=document.getElementById('searchBtn');
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function v(x){return x&&x!=='정보 없음'?esc(x):'<span class="empty">정보 없음</span>';}
-function table(rows,verb=false){let h=verb?'<tr><th>인칭</th><th>활용형</th></tr>':'<tr><th>격</th><th>단수</th><th>복수</th></tr>';return '<table class="table">'+h+rows.map(r=>verb?`<tr><td>${esc(r.label)}</td><td>${v(r.value)}</td></tr>`:`<tr><td>${esc(r.case)}</td><td>${v(r.singular)}</td><td>${v(r.plural)}</td></tr>`).join('')+'</table>';}
+function table(rows,verb=false,adjective=false){let h=verb?'<tr><th>인칭</th><th>활용형</th></tr>':adjective?'<tr><th>격</th><th>남성</th><th>여성</th><th>중성</th><th>복수</th></tr>':'<tr><th>격</th><th>단수</th><th>복수</th></tr>';return '<table class="table">'+h+rows.map(r=>verb?`<tr><td>${esc(r.label)}</td><td>${v(r.value)}</td></tr>`:adjective?`<tr><td>${esc(r.case)}</td><td>${v(r.masculine)}</td><td>${v(r.feminine)}</td><td>${v(r.neuter)}</td><td>${v(r.plural)}</td></tr>`:`<tr><td>${esc(r.case)}</td><td>${v(r.singular)}</td><td>${v(r.plural)}</td></tr>`).join('')+'</table>';}
 function render(data,q){
  const f=data.fields||{}, pos=data.pos;
  let body=`<div class="card"><div class="head"><div class="lemma">${v(data.lemma||q)}</div><div class="pos">${esc(data.posLabel||'판별 불가')}</div></div>`;
@@ -26,7 +26,7 @@ function render(data,q){
  else if(pos==='verb'){
    const c=f.conjugation||{}; const rows=['1인칭 단수','2인칭 단수','3인칭 단수','1인칭 복수','2인칭 복수','3인칭 복수'].map(x=>({label:x,value:c[x]}));
    body+=`<div class="section"><h2>동사</h2><div class="info-grid"><div class="label">뜻</div><div>${v(f.meaning)}</div><div class="label">활용</div><div>${v(f.conjugationType)}</div><div class="label">불완료-완료형</div><div>${v(f.aspectPair)}</div><div class="label">이동동사</div><div>${v(f.motionType)}</div></div></div><div class="section"><h2>활용</h2>${table(rows,true)}</div>`;
- } else if(pos==='adjective') body+=`<div class="section"><h2>형용사</h2><div class="info-grid"><div class="label">뜻</div><div>${v(f.meaning)}</div></div></div><div class="section"><h2>격변화</h2>${table(f.cases||[])}</div>`;
+ } else if(pos==='adjective') body+=`<div class="section"><h2>형용사</h2><div class="info-grid"><div class="label">뜻</div><div>${v(f.meaning)}</div></div></div><div class="section"><h2>격변화</h2>${table(f.cases||[],false,true)}</div>`;
  else if(pos==='adverb') body+=`<div class="section"><h2>부사</h2><div class="info-grid"><div class="label">뜻</div><div>${v(f.meaning)}</div></div></div>`;
  else body+=`<div class="status">해당 단어의 품사 정보를 찾지 못했습니다.</div>`;
  body+='</div>'; result.innerHTML=body;
