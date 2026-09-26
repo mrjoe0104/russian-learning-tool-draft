@@ -1,6 +1,6 @@
 {
   "name": "russian-learning-tool",
-  "version": "2.4.0",
+  "version": "2.6.0",
   "private": true,
   "description": "Online-ready Russian learning tool: Gramota search -> Gramota search -> actual /meta link -> detailed page -> POS -> field extraction -> no-info handling",
   "scripts": {
