@@ -1,11 +1,11 @@
 {
   "name": "russian-learning-tool",
-  "version": "3.0.0",
+  "version": "3.3.0",
   "private": true,
-  "description": "Online-ready Russian learning tool: Gramota morphology + exact verb forms + actual meta link + automatic Russian-to-Korean translation",
+  "description": "Russian learning tool using Gramota Meta pages as the morphology source",
   "scripts": {
     "start": "node server.js",
-    "test": "node test_parser.js"
+    "test": "node test.js"
   },
   "engines": {
     "node": ">=18"
