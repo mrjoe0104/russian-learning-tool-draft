@@ -22,7 +22,9 @@ function table(rows,verb=false,adjective=false){let h=verb?'<tr><th>인칭</th><
 function render(data,q){
  const f=data.fields||{}, pos=data.pos;
  let body=`<div class="card"><div class="head"><div class="lemma">${v(data.lemma||q)}</div><div class="pos">${esc(data.posLabel||'판별 불가')}</div></div>`;
- if(pos==='noun') body+=`<div class="section"><h2>명사</h2><div class="info-grid"><div class="label">뜻</div><div>${v(f.meaning)}</div><div class="label">성</div><div>${v(f.gender==='мужской'?'남성':f.gender==='женский'?'여성':f.gender==='средний'?'중성':f.gender)}</div></div></div><div class="section"><h2>격변화</h2>${table(f.cases||[])}</div>`;
+ const nounLike=['noun','pronoun','numeral'].includes(pos);
+ const simpleMeaning=['adverb','conjunction','particle','interjection','preposition'].includes(pos);
+ if(nounLike) body+=`<div class="section"><h2>${esc(data.posLabel)}</h2><div class="info-grid"><div class="label">뜻</div><div>${v(f.meaning)}</div><div class="label">성</div><div>${v(f.gender==='мужской'?'남성':f.gender==='женский'?'여성':f.gender==='средний'?'중성':f.gender)}</div></div></div><div class="section"><h2>격변화</h2>${table(f.cases||[])}</div>`;
  else if(pos==='verb'){
    const c=f.conjugation||{};
    const currentRows=['1인칭 단수','2인칭 단수','3인칭 단수','1인칭 복수','2인칭 복수','3인칭 복수'].map(x=>({label:x,value:c[x]}));
@@ -33,9 +35,9 @@ function render(data,q){
    const im=f.imperative||{};
    const imperativeRows=[['2인칭 단수',im['2인칭 단수']],['2인칭 복수',im['2인칭 복수']]].map(x=>({label:x[0],value:x[1]}));
    const aspect=f.aspect==='несовершенный'?'불완료상':f.aspect==='совершенный'?'완료상':f.aspect;
-   body+=`<div class="section"><h2>동사</h2><div class="info-grid"><div class="label">뜻</div><div>${v(f.meaning)}</div><div class="label">활용</div><div>${v(f.conjugationType)}</div><div class="label">불완료-완료형</div><div>${v(aspect)}</div><div class="label">이동동사</div><div>${v(f.motionType)}</div></div></div><div class="section"><h2>현재형</h2>${table(currentRows,true)}</div><div class="section"><h2>미래형 · 과거형</h2><div class="verb-pair"><div class="verb-block"><h3>미래형</h3>${table(futureRows,true)}</div><div class="verb-block"><h3>과거형</h3>${table(pastRows,true)}</div></div></div><div class="section"><h2>명령형</h2>${table(imperativeRows,true)}</div>`;
- } else if(pos==='adjective') body+=`<div class="section"><h2>형용사</h2><div class="info-grid"><div class="label">뜻</div><div>${v(f.meaning)}</div></div></div><div class="section"><h2>격변화</h2>${table(f.cases||[],false,true)}</div>`;
- else if(pos==='adverb') body+=`<div class="section"><h2>부사</h2><div class="info-grid"><div class="label">뜻</div><div>${v(f.meaning)}</div></div></div>`;
+   body+=`<div class="section"><h2>${esc(data.posLabel)}</h2><div class="info-grid"><div class="label">뜻</div><div>${v(f.meaning)}</div><div class="label">활용</div><div>${v(f.conjugationType)}</div><div class="label">불완료-완료형</div><div>${v(aspect)}</div><div class="label">이동동사</div><div>${v(f.motionType)}</div></div></div><div class="section"><h2>현재형</h2>${table(currentRows,true)}</div><div class="section"><h2>미래형 · 과거형</h2><div class="verb-pair"><div class="verb-block"><h3>미래형</h3>${table(futureRows,true)}</div><div class="verb-block"><h3>과거형</h3>${table(pastRows,true)}</div></div></div><div class="section"><h2>명령형</h2>${table(imperativeRows,true)}</div>`;
+ } else if(pos==='adjective') body+=`<div class="section"><h2>${esc(data.posLabel)}</h2><div class="info-grid"><div class="label">뜻</div><div>${v(f.meaning)}</div></div></div><div class="section"><h2>격변화</h2>${table(f.cases||[],false,true)}</div>`;
+ else if(simpleMeaning) body+=`<div class="section"><h2>${esc(data.posLabel)}</h2><div class="info-grid"><div class="label">뜻</div><div>${v(f.meaning)}</div></div></div>`;
  else body+=`<div class="status">해당 단어의 품사 정보를 찾지 못했습니다.</div>`;
  if(data.metaUrl) body+=`<div class="source"><a href="${esc(data.metaUrl)}" target="_blank" rel="noopener noreferrer">그라모타 원문</a></div>`; body+='</div>'; result.innerHTML=body;
 }
