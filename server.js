@@ -25,9 +25,9 @@ const POS = {
   'Числительное': 'numeral', 'Предлог': 'preposition'
 };
 const POS_LABEL = {
-  noun: 'Существительное', verb: 'Глагол', adjective: 'Прилагательное', adverb: 'Наречие',
-  pronoun: 'Местоимение', conjunction: 'Союз', particle: 'Частица', interjection: 'Междометие',
-  numeral: 'Числительное', preposition: 'Предлог', unknown: '판별 불가'
+  noun: '명사', verb: '동사', adjective: '형용사', adverb: '부사',
+  pronoun: '대명사', conjunction: '접속사', particle: '소사', interjection: '감탄사',
+  numeral: '수사', preposition: '전치사', unknown: '판별 불가'
 };
 const NOUN_LIKE = new Set(['noun', 'pronoun', 'numeral']);
 const SIMPLE_MEANING = new Set(['adverb', 'conjunction', 'particle', 'interjection', 'preposition']);
@@ -108,54 +108,148 @@ function detectDeclaredPos(text = '') {
   return posMatches(text)[0]?.pos || 'unknown';
 }
 
+function compactStressedToken(line = '', query = '') {
+  const cleaned = normalizeText(line).replace(/\s+/g, '');
+  if (!/\u0301/.test(cleaned)) return null;
+  const firstPart = cleaned.split(/[,;()\[\]{}]/)[0];
+  const token = firstPart.replace(/[^А-ЯЁа-яё́-]/g, '');
+  return normalizeForMatch(token) === normalizeForMatch(query) && /\u0301/.test(token) ? token : null;
+}
+
+function findStressedLemma(lines, startIndex, query) {
+  const q = normalizeForMatch(query);
+  for (let i = startIndex; i < Math.min(lines.length, startIndex + 5); i++) {
+    if (normalizeForMatch(lines[i]) === q && /\u0301/.test(lines[i])) return lines[i];
+    const token = compactStressedToken(lines[i], query);
+    if (token) return token;
+  }
+  return null;
+}
+
 function extractSearchPos(searchHtml = '', query = '') {
   const text = stripHtml(String(searchHtml).replace(/\r/g, ''));
-  const rawLines = text.split(/\\n+/).map(normalizeText).filter(Boolean);
+  const lines = text.split(/\n+/).map(normalizeText).filter(Boolean);
   const q = normalizeForMatch(query);
-  const startIndex = Math.max(0, rawLines.findIndex(line => /^(?:Точное соответствие|Словари)$/i.test(line)));
-  const lines = startIndex > 0 ? rawLines.slice(startIndex) : rawLines;
   const candidates = [];
 
+  // Gramota 검색 결과의 "Словари" 영역에는 보통
+  //   강세가 표시된 표제어
+  //   품사
+  //   변화형/뜻
+  // 순서로 항목이 이어진다. 위쪽의 일반 검색 결과에는 다른 단어의 품사가
+  // 섞일 수 있으므로, '정확히 같은 표제어' 뒤의 짧은 범위에서만 품사를 찾는다.
   for (let i = 0; i < lines.length; i++) {
     if (normalizeForMatch(lines[i]) !== q) continue;
-    for (let j = i + 1; j < Math.min(lines.length, i + 81); j++) {
+    const near = [];
+    const stressedLabel = findStressedLemma(lines, i, query) || lines[i];
+    for (let j = i + 1; j < Math.min(lines.length, i + 13); j++) {
+      if (normalizeForMatch(lines[j]) === q && j > i + 1) break;
       const matches = posMatches(lines[j]);
       for (const match of matches) {
-        const distance = j - i;
-        candidates.push({
+        near.push({
           pos: match.pos,
-          label: lines[i],
-          score: 1000 - distance * 8 - match.index / 100,
-          distance,
-          line: lines[j]
+          distance: j - i,
+          line: lines[j],
+          label: stressedLabel
         });
       }
-      // A new exact result starts; do not let its POS contaminate the current result.
-      if (j > i + 1 && normalizeForMatch(lines[j]) === q) break;
+      if (/^(?:Всё об этом слове|Все формы слова)$/i.test(lines[j])) break;
+    }
+    for (const item of near) {
+      const sectionBonus = lines.slice(Math.max(0, i - 5), i).some(x => /^Словари$/i.test(x)) ? 500 : 0;
+      const score = 1000 + sectionBonus - item.distance * 30;
+      candidates.push({ ...item, score });
     }
   }
 
-  // HTML 검색 결과에 /meta/ 링크가 있으면 같은 검색 결과에서 원문 URL도 보존한다.
   const links = extractMetaLinks(searchHtml, query);
-  if (candidates.length) {
-    candidates.sort((a, b) => b.score - a.score);
-    const best = candidates[0];
-    const exactLink = links.find(x => normalizeForMatch(x.label) === q) || links[0] || null;
-    return {
-      href: exactLink?.url || null,
-      label: best.label,
-      pos: best.pos,
-      score: best.score
-    };
+  // 변화형으로 검색했을 때는 검색 결과의 사전 항목 안에
+  // 'мн. число ... кни́гах' / 'изъявительное ... говори́ли'처럼
+  // 입력형이 들어가고, 그 위에 원형과 품사가 놓인다.
+  if (!candidates.length && q.length >= 3) {
+    for (let i = 0; i < lines.length; i++) {
+      const normalizedLine = normalizeForMatch(lines[i]);
+      if (!normalizedLine.includes(q)) continue;
+      if (!/(?:число|лицо|время|падеж|наклонение|форма)/i.test(lines[i])) continue;
+      for (let j = Math.max(0, i - 8); j <= i; j++) {
+        const head = lines[j];
+        if (!head || normalizeForMatch(head).includes(q)) continue;
+        const posLine = lines.slice(j + 1, Math.min(lines.length, j + 13)).find(line => {
+          const matches = posMatches(line);
+          return matches.length > 0;
+        });
+        if (!posLine) continue;
+        const matches = posMatches(posLine);
+        for (const match of matches) {
+          candidates.push({
+            pos: match.pos, label: head, line: posLine,
+            score: 800 - (i - j) * 10
+          });
+        }
+      }
+    }
   }
 
-  // 검색 결과가 한 줄짜리 Markdown 등으로 압축된 경우의 보조 판정.
-  const compact = rawLines.join(' ');
-  const pos = detectDeclaredPos(compact);
-  return pos === 'unknown' ? null : { href: links[0]?.url || null, label: query, pos, score: 0 };
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => b.score - a.score);
+  const best = candidates[0];
+  const exactLink = links.find(x => normalizeForMatch(x.label) === q) || links[0] || null;
+  return {
+    href: exactLink?.url || null,
+    label: best.label,
+    pos: best.pos,
+    score: best.score,
+    sourceLine: best.line
+  };
+}
+
+function extractSearchLemma(searchHtml = '', query = '', expectedPos = 'unknown') {
+  const text = stripHtml(String(searchHtml).replace(/\r/g, ''));
+  const lines = text.split(/\n+/).map(normalizeText).filter(Boolean);
+  const q = normalizeForMatch(query);
+  const candidates = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (normalizeForMatch(lines[i]) !== q) continue;
+    const next = lines.slice(i + 1, i + 13);
+    const hasExpected = expectedPos === 'unknown' || next.some(line => posMatches(line).some(m => m.pos === expectedPos));
+    if (!hasExpected) continue;
+    const stressed = findStressedLemma(lines, i, query) || lines[i];
+    const sectionBonus = lines.slice(Math.max(0, i - 5), i).some(x => /^Словари$/i.test(x)) ? 500 : 0;
+    candidates.push({ line: stressed, score: 1000 + sectionBonus - i / 1000 });
+  }
+  if (!candidates.length && q.length >= 3) {
+    for (let i = 0; i < lines.length; i++) {
+      const normalizedLine = normalizeForMatch(lines[i]);
+      if (!normalizedLine.includes(q)) continue;
+      if (!/(?:число|лицо|время|падеж|наклонение|форма)/i.test(lines[i])) continue;
+      for (let j = Math.max(0, i - 8); j < i; j++) {
+        const head = lines[j];
+        if (!head || normalizeForMatch(head).includes(q)) continue;
+        const next = lines.slice(j + 1, Math.min(lines.length, j + 13));
+        const hasExpected = expectedPos === 'unknown' || next.some(line => posMatches(line).some(m => m.pos === expectedPos));
+        if (!hasExpected) continue;
+        candidates.push({ line: head, score: 800 - (i - j) * 10 });
+      }
+    }
+  }
+  if (!candidates.length) return normalizeText(query);
+  candidates.sort((a, b) => b.score - a.score);
+  // 검색 결과의 표제어에는 보통 강세가 들어가므로 입력값보다 이 줄을 우선한다.
+  return candidates[0].line || normalizeText(query);
 }
 
 // 메타 페이지는 품사 판정의 기준이 아니라, 해당 품사의 세부 활용/변화 정보를 얻기 위한 보조 원문이다.
+function analyzeSearchResult(searchHtml = '', query = '') {
+  const searchPos = extractSearchPos(searchHtml, query);
+  const pos = searchPos?.pos || 'unknown';
+  return {
+    pos,
+    posLabel: posLabel(pos),
+    lemma: extractSearchLemma(searchHtml, query, pos),
+    href: searchPos?.href || null
+  };
+}
+
 function detectMetaPos(raw = '') {
   const lines = linesOf(raw);
   const heading = extractHeading(raw);
@@ -538,19 +632,26 @@ async function resolveMetaPage(searchHtml, query, expectedPos = 'unknown') {
 async function gramota(query) {
   const searchUrl = 'https://gramota.ru/poisk?mode=slovari&query=' + encodeURIComponent(query);
   const search = await fetchGramotaPage(searchUrl);
-  const searchPos = extractSearchPos(search.html, query);
-  const expectedPos = searchPos?.pos || 'unknown';
+  const analysis = analyzeSearchResult(search.html, query);
+  const searchPos = analysis.pos === 'unknown' ? null : { ...analysis, pos: analysis.pos };
+  const expectedPos = analysis.pos;
   const meta = expectedPos !== 'unknown' ? await resolveMetaPage(search.html, query, expectedPos) : null;
 
+  const searchLemma = analysis.lemma || normalizeText(query);
+
   if (!searchPos || expectedPos === 'unknown') {
-    return { ok: true, query, pos: 'unknown', posLabel: POS_LABEL.unknown, fields: { meaning: NO_INFO }, metaUrl: meta?.url || searchPos?.href || searchUrl };
+    const lemma = searchLemma || normalizeText(query);
+    return {
+      ok: true, query, lemma, pos: 'unknown', posLabel: POS_LABEL.unknown,
+      fields: { meaning: await translateToKorean(lemma) }, metaUrl: searchPos?.href || searchUrl
+    };
   }
 
   // 검색 결과에서 품사를 확정하고, 메타 페이지는 그 품사의 세부 변화형을 얻을 때만 사용한다.
   if (!meta) {
-    const meaning = await translateToKorean(query);
+    const meaning = await translateToKorean(searchLemma);
     return {
-      ok: true, query, lemma: searchPos.label || query, pos: expectedPos, posLabel: posLabel(expectedPos),
+      ok: true, query, lemma: searchLemma, pos: expectedPos, posLabel: posLabel(expectedPos),
       fields: { meaning }, metaUrl: searchPos.href || searchUrl
     };
   }
@@ -573,7 +674,7 @@ const server = http.createServer(async (req, res) => {
       if (!q) return send(res, 400, JSON.stringify({ ok: false, error: '검색어가 없습니다.' }), 'application/json; charset=utf-8');
       return send(res, 200, JSON.stringify(await gramota(q)), 'application/json; charset=utf-8');
     }
-    if (url.pathname === '/api/health') return send(res, 200, JSON.stringify({ ok: true, version: '3.4.0', source: 'Gramota' }), 'application/json; charset=utf-8');
+    if (url.pathname === '/api/health') return send(res, 200, JSON.stringify({ ok: true, version: '3.5.0', source: 'Gramota' }), 'application/json; charset=utf-8');
     if (url.pathname === '/' || url.pathname === '/index.html') return send(res, 200, fs.readFileSync(path.join(ROOT, 'index.html')), 'text/html; charset=utf-8');
     return send(res, 404, 'Not found');
   } catch (e) {
@@ -581,11 +682,11 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-if (require.main === module) server.listen(PORT, HOST, () => console.log(`Russian Learning Tool V3.4: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}`));
+if (require.main === module) server.listen(PORT, HOST, () => console.log(`Russian Learning Tool V3.5: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}`));
 
 module.exports = {
   NO_INFO, decodeEntities, stripHtml, normalizeText, normalizeForMatch, posLabel, detectDeclaredPos, extractSearchPos, detectMetaPos,
-  extractMetaLinks, extractLemma, extractGender, extractDeclension, extractAspect,
+  extractMetaLinks, extractSearchPos, extractSearchLemma, analyzeSearchResult, extractLemma, extractGender, extractDeclension, extractAspect,
   extractConjugationType, extractMotionType, parseNounCases, parseAdjectiveCases,
   parseVerbTables, verbForms, extractFields, extractNoun: raw => extractFields(raw, 'noun'),
   extractVerb: raw => extractFields(raw, 'verb'), extractAdjective: raw => extractFields(raw, 'adjective'),
