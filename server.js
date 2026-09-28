@@ -158,7 +158,7 @@ function extractHtmlTableForms(html){
 }
 
 function cleanMarkdownLine(s=''){
-  return String(s).replace(/!\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/\[([^\]]+)\]\([^)]*\)/g,'$1').replace(/[*_`]/g,'').trim();
+  return String(s).replace(/^\s*#+\s*/,'').replace(/!\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/\[([^\]]+)\]\([^)]*\)/g,'$1').replace(/[*_`]/g,'').trim();
 }
 
 function parseMarkdownCaseTable(raw=''){
@@ -332,34 +332,167 @@ function extractNoun(text, metaRaw='', fallbackLemma=NO_INFO){
   const cases=formatCaseTable(merged);
   return {lemma,meaningRu:extractDefinition(text,'noun'),gender:meta.gender!==NO_INFO?meta.gender:firstMatch(text,[/(?:Существительное,\s*)(мужской|женский|средний) род/i]),declension:firstMatch(text,[/(\d-е склонение)/i]),cases};
 }
-function extractVerbConjugation(text){
-  const lines=splitLines(text), out={
+function parseMarkdownTable(raw, headerMatchers) {
+  const lines=String(raw||'').split(/\r?\n/).map(x=>cleanMarkdownLine(x)).filter(Boolean);
+  for(let i=0;i<lines.length;i++){
+    if(!lines[i].includes('|')) continue;
+    const headers=lines[i].split('|').map(x=>x.trim());
+    if(headers.length<headerMatchers.length) continue;
+    if(!headerMatchers.every((m,idx)=>m.test(headers[idx]||''))) continue;
+    const rows=[];
+    let pendingLabel='';
+    for(let j=i+1;j<lines.length;j++){
+      if(/^[-|:\s]+$/.test(lines[j])) continue;
+      if(!lines[j].includes('|')){ pendingLabel=lines[j]; continue; }
+      const cells=lines[j].split('|').map(x=>cleanMarkdownLine(x.trim()));
+      if(pendingLabel && !cells[0]) cells[0]=pendingLabel;
+      if(pendingLabel && cells[0]!==pendingLabel && /^$/.test(cells[0])) cells[0]=pendingLabel;
+      pendingLabel='';
+      if(cells.length<headers.length) break;
+      rows.push(cells.slice(0,headers.length));
+    }
+    if(rows.length) return {headers,rows};
+  }
+  return null;
+}
+
+function extractHtmlTables(raw=''){
+  const tables=[];
+  const re=/<table\b[^>]*>([\s\S]*?)<\/table>/gi;
+  let tm;
+  while((tm=re.exec(String(raw)))){
+    const rows=[]; const rr=/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi; let rm;
+    while((rm=rr.exec(tm[1]))){
+      const cells=[]; const cr=/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi; let cm;
+      while((cm=cr.exec(rm[1]))) cells.push(stripHtml(cm[1]).trim());
+      if(cells.length) rows.push(cells);
+    }
+    if(rows.length) tables.push(rows);
+  }
+  return tables;
+}
+
+function extractSectionMarkdownTable(raw, sectionTitle){
+  const lines=String(raw||'').split(/\r?\n/).map(x=>cleanMarkdownLine(x)).filter(Boolean);
+  for(let i=0;i<lines.length;i++){
+    if(lines[i].toLowerCase()!==sectionTitle.toLowerCase()) continue;
+    for(let j=i+1;j<Math.min(lines.length,i+20);j++){
+      if(!lines[j].includes('|')) continue;
+      const headers=lines[j].split('|').map(x=>x.trim());
+      if(j+1<lines.length && /^[-|:\s]+$/.test(lines[j+1])){
+        const rows=[];
+        let pendingLabel='';
+        for(let k=j+2;k<lines.length;k++){
+          if(!lines[k].includes('|')){ pendingLabel=lines[k]; continue; }
+          const cells=lines[k].split('|').map(x=>cleanMarkdownLine(x.trim()));
+          if(pendingLabel && !cells[0]) cells[0]=pendingLabel;
+          pendingLabel='';
+          if(cells.length<headers.length) break;
+          rows.push(cells.slice(0,headers.length));
+        }
+        if(rows.length)return {headers,rows};
+      }
+    }
+  }
+  return null;
+}
+
+function findVerbTables(raw=''){
+  const out={present:null,future:null,past:null,imperative:null};
+  const tables=extractHtmlTables(raw);
+  const mdPresent=parseMarkdownTable(raw,[/^(Лицо|лицо)$/i,/^Настоящее время$/i,/^Будущее время$/i]);
+  if(mdPresent) out.present=mdPresent;
+
+  const useRows=(rows)=>{
+    if(!rows?.length)return;
+    const h=rows[0].map(x=>normalizeText(x));
+    const joined=h.join(' | ');
+    if(/Лицо/i.test(joined)&&/Настоящее время/i.test(joined)&&/Будущее время/i.test(joined)) out.present={headers:h,rows:rows.slice(1)};
+    else if(/Лицо/i.test(joined)&&/Будущее время/i.test(joined)) out.future={headers:h,rows:rows.slice(1)};
+  };
+  for(const rows of tables) useRows(rows);
+
+  out.past=extractSectionMarkdownTable(raw,'Формы прошедшего времени')||out.past;
+  out.imperative=extractSectionMarkdownTable(raw,'Повелительное наклонение')||out.imperative;
+  return out;
+}
+
+function extractVerbConjugation(text=''){
+  const t=findVerbTables(text), out={
     '1인칭 단수':NO_INFO,'2인칭 단수':NO_INFO,'3인칭 단수':NO_INFO,
     '1인칭 복수':NO_INFO,'2인칭 복수':NO_INFO,'3인칭 복수':NO_INFO
   };
-  let person=null, number='singular';
-  const pmap={'1-е лицо':'1','2-е лицо':'2','3-е лицо':'3'};
-  for(let i=0;i<lines.length;i++){
-    const l=lines[i]; if(/^мн\.?\s*число|^множественное число/i.test(l)){number='plural';continue;} if(/^ед\.?\s*число|^единственное число/i.test(l)){number='singular';continue;}
-    const pm=l.match(/^(1-е|2-е|3-е) лицо/i); if(pm){person=pmap[pm[1]];continue;}
-    if(person&&isWordLine(l)&&!isGrammarNoise(l)){
-      const key=person+'인칭 '+(number==='singular'?'단수':'복수'); if(out[key]===NO_INFO)out[key]=l;
+  if(t.present){
+    for(const row of t.present.rows){
+      const person=normalizeText(row[0]||'');
+      const current=row[1]||NO_INFO;
+      const key=person.match(/^([ЯТтОоМмВвОо][^ ]*)/i) ? null : null;
+      const map={
+        'Я':'1인칭 단수','Ты':'2인칭 단수','Он':'3인칭 단수','Она':'3인칭 단수','Оно':'3인칭 단수',
+        'Мы':'1인칭 복수','Вы':'2인칭 복수','Они':'3인칭 복수'
+      };
+      if(map[person]) out[map[person]]=current;
     }
+  }
+  return {present:out, future:extractVerbFuture(text,t), past:extractVerbPast(text,t), imperative:extractVerbImperative(text,t)};
+}
+
+function extractVerbFuture(text,t=findVerbTables(text)){
+  const out={'1인칭 단수':NO_INFO,'2인칭 단수':NO_INFO,'3인칭 단수':NO_INFO,'1인칭 복수':NO_INFO,'2인칭 복수':NO_INFO,'3인칭 복수':NO_INFO};
+  if(t.present){
+    const map={'Я':'1인칭 단수','Ты':'2인칭 단수','Он':'3인칭 단수','Она':'3인칭 단수','Оно':'3인칭 단수','Мы':'1인칭 복수','Вы':'2인칭 복수','Они':'3인칭 복수'};
+    for(const row of t.present.rows) if(map[row[0]]) out[map[row[0]]]=row[2]||NO_INFO;
+  }
+  if(t.future && !t.present){
+    const map={'Я':'1인칭 단수','Ты':'2인칭 단수','Он':'3인칭 단수','Она':'3인칭 단수','Оно':'3인칭 단수','Мы':'1인칭 복수','Вы':'2인칭 복수','Они':'3인칭 복수'};
+    for(const row of t.future.rows) if(map[row[0]]) out[map[row[0]]]=row[1]||NO_INFO;
   }
   return out;
 }
-function extractVerb(text){
-  const aspect=firstMatch(text,[/(совершенный|несовершенный) вид/i]);
-  const mobility=/\b(?:идти|ходить|ехать|ездить|бежать|бегать|нести|носить|вести|водить|лететь|летать|плыть|плавать|ползти|полза́ть)\b/i.test(text);
-  return {lemma:extractLemmaFromBlock(text,'verb'),meaningRu:extractDefinition(text,'verb'),conjugationType:firstMatch(text,[/(\d-е спряжение)/i]),conjugation:extractVerbConjugation(text),aspect,aspectPair:extractAspectPair(text),motionType:mobility?extractMotionType(text):NO_INFO};
+
+function extractVerbPast(text,t=findVerbTables(text)){
+  const out={'남성':NO_INFO,'여성':NO_INFO,'중성':NO_INFO,'복수':NO_INFO};
+  if(!t.past)return out;
+  const rows=t.past.rows||[];
+  const map={'мужской':'남성','мужской род':'남성','женский':'여성','женский род':'여성','средний':'중성','средний род':'중성','множественное число':'복수','множественное':'복수'};
+  for(const row of rows){
+    const k=map[normalizeText(row[0]||'').toLowerCase()];
+    if(k) out[k]=row[1]||NO_INFO;
+  }
+  return out;
 }
-function extractAspectPair(text){
-  const m=text.match(/(?:видовая пара|видовая корреляция|пара)\s*[:—-]?\s*([А-ЯЁа-яё́-]+)/i); return m?m[1]:NO_INFO;
+
+function extractVerbImperative(text,t=findVerbTables(text)){
+  const out={'2인칭 단수':NO_INFO,'2인칭 복수':NO_INFO};
+  if(!t.imperative)return out;
+  for(const row of t.imperative.rows||[]){
+    const person=normalizeText(row[0]||'');
+    const value=row[1]||NO_INFO;
+    if(person==='Ты') out['2인칭 단수']=value;
+    else if(person==='Вы') out['2인칭 복수']=value;
+  }
+  return out;
 }
-function extractMotionType(text){
-  const m=text.match(/\b(однонаправленн(?:ый|ое)|разнонаправленн(?:ый|ое)|однократн(?:ое|ая)|многократн(?:ое|ая))\b/i);
-  if(!m)return NO_INFO;
-  return /разнонаправ|многократ/i.test(m[1])?'부정태':'정태';
+
+function extractVerb(text, metaRaw='', fallbackLemma=NO_INFO){
+  const source=String(metaRaw||text);
+  const meta=metaRaw?extractMetaStructured(metaRaw,fallbackLemma):{lemma:NO_INFO};
+  const blockLemma=extractLemmaFromBlock(text,'verb');
+  const lemma=meta.lemma!==NO_INFO?meta.lemma:(blockLemma!==NO_INFO?blockLemma:fallbackLemma);
+  const aspect=firstMatch(source,[/(совершенный|несовершенный) вид/i]);
+  const tables=extractVerbConjugation(source);
+  const movement=firstMatch(source,[/(однонаправленн(?:ый|ое)|разнонаправленн(?:ый|ое)|однократн(?:ое|ая)|многократн(?:ое|ая))/i]);
+  return {
+    lemma:lemma||NO_INFO,
+    meaningRu:extractDefinition(text,'verb'),
+    conjugationType:firstMatch(source,[/(\d-е спряжение)/i]),
+    conjugation:tables.present,
+    future:tables.future,
+    past:tables.past,
+    imperative:tables.imperative,
+    aspect,
+    motionType:movement!==NO_INFO?( /разнонаправ|многократ/i.test(movement)?'비정향':'정향'):NO_INFO
+  };
 }
 function formatAdjectiveTable(t){
   return CASES.map(([ru,ko])=>({case:ko,masculine:t[ru]?.masculine||NO_INFO,feminine:t[ru]?.feminine||NO_INFO,neuter:t[ru]?.neuter||NO_INFO,plural:t[ru]?.plural||NO_INFO}));
@@ -485,17 +618,24 @@ async function gramota(q){
   // for the original link and as a secondary source only.
   const text=stripHtml(searchFetched.html);
   const selected=findRelevantBlock(text,q);
-  if(!selected.queryMatched||selected.pos==='unknown'){
+  const metaText=meta?.html?stripHtml(meta.html):'';
+  const metaPos=metaText?detectPos(metaText):'unknown';
+  const pos=(metaPos!=='unknown')?metaPos:selected.pos;
+  const selectedText=(pos===selected.pos&&selected.text)?selected.text:text;
+  if(!meta && (!selected.queryMatched||selected.pos==='unknown')){
+    return {ok:true,query:q,pos:'unknown',posLabel:'판별 불가',fields:{meaning:NO_INFO},metaUrl:null};
+  }
+  if(pos==='unknown'){
     return {ok:true,query:q,pos:'unknown',posLabel:'판별 불가',fields:{meaning:NO_INFO},metaUrl:meta?.url||null};
   }
   let fields;
-  if(selected.pos==='noun')fields=extractNoun(selected.text, meta?.html||'', meta?.linkLabel||NO_INFO);
-  else if(selected.pos==='verb')fields=extractVerb(selected.text);
-  else if(selected.pos==='adjective')fields=extractAdjective(selected.text, meta?.html||'', meta?.linkLabel||NO_INFO);
-  else fields=extractAdverb(selected.text);
+  if(pos==='noun')fields=extractNoun(selectedText, meta?.html||'', meta?.linkLabel||NO_INFO);
+  else if(pos==='verb')fields=extractVerb(selectedText, meta?.html||'', meta?.linkLabel||NO_INFO);
+  else if(pos==='adjective')fields=extractAdjective(selectedText, meta?.html||'', meta?.linkLabel||NO_INFO);
+  else fields=extractAdverb(selectedText);
   fields.meaning=await translateToKorean(fields.lemma!==NO_INFO?fields.lemma:fields.meaningRu);
   delete fields.meaningRu;
-  return {ok:true,query:q,lemma:fields.lemma,pos:selected.pos,posLabel:posLabel(selected.pos),fields,metaUrl:meta?.url||null,transport:meta?.via||searchFetched.via};
+  return {ok:true,query:q,lemma:fields.lemma,pos,posLabel:posLabel(pos),fields,metaUrl:meta?.url||null,transport:meta?.via||searchFetched.via};
 }
 
 const server=http.createServer(async(req,res)=>{
@@ -505,10 +645,10 @@ const server=http.createServer(async(req,res)=>{
       const q=(u.searchParams.get('q')||'').trim(); if(!q)return send(res,400,JSON.stringify({ok:false,error:'검색어가 없습니다.'}),'application/json; charset=utf-8');
       const data=await gramota(q); return send(res,200,JSON.stringify(data),'application/json; charset=utf-8');
     }
-    if(u.pathname==='/api/health')return send(res,200,JSON.stringify({ok:true,version:'2.9.0',source:'Gramota'}),'application/json; charset=utf-8');
+    if(u.pathname==='/api/health')return send(res,200,JSON.stringify({ok:true,version:'3.0.0',source:'Gramota'}),'application/json; charset=utf-8');
     if(u.pathname==='/'||u.pathname==='/index.html')return send(res,200,fs.readFileSync(path.join(ROOT,'index.html')),'text/html; charset=utf-8');
     return send(res,404,'Not found');
   }catch(e){return send(res,502,JSON.stringify({ok:false,error:e.message||'검색 실패'}),'application/json; charset=utf-8');}
 });
-if(require.main===module)server.listen(PORT,HOST,()=>console.log(`Russian Learning Tool V2.8: http://${HOST==='0.0.0.0'?'localhost':HOST}:${PORT}`));
+if(require.main===module)server.listen(PORT,HOST,()=>console.log(`Russian Learning Tool V3.0: http://${HOST==='0.0.0.0'?'localhost':HOST}:${PORT}`));
 module.exports={NO_INFO,decodeEntities,stripHtml,normalizeText,normalizeForMatch,detectPos,posLabel,isWordLine,splitLines,findGramotaDictionaryBlock,findRelevantBlock,extractMetaLinks,extractLemmaFromBlock,extractDefinition,parseCaseForms,extractNoun,extractVerb,extractAdjective,extractAdverb,translateToKorean,gramota};
