@@ -37,8 +37,8 @@ function render(data,q){
    const aspect=f.aspect==='несовершенный'?'불완료상':f.aspect==='совершенный'?'완료상':f.aspect;
    body+=`<div class="section"><h2>${esc(data.posLabel)}</h2><div class="info-grid"><div class="label">뜻</div><div>${v(f.meaning)}</div><div class="label">활용</div><div>${v(f.conjugationType)}</div><div class="label">불완료-완료형</div><div>${v(aspect)}</div><div class="label">이동동사</div><div>${v(f.motionType)}</div></div></div><div class="section"><h2>현재형</h2>${table(currentRows,true)}</div><div class="section"><h2>미래형 · 과거형</h2><div class="verb-pair"><div class="verb-block"><h3>미래형</h3>${table(futureRows,true)}</div><div class="verb-block"><h3>과거형</h3>${table(pastRows,true)}</div></div></div><div class="section"><h2>명령형</h2>${table(imperativeRows,true)}</div>`;
  } else if(pos==='adjective') body+=`<div class="section"><h2>${esc(data.posLabel)}</h2><div class="info-grid"><div class="label">뜻</div><div>${v(f.meaning)}</div></div></div><div class="section"><h2>격변화</h2>${table(f.cases||[],false,true)}</div>`;
- else if(simpleMeaning) body+=`<div class="section"><h2>${esc(data.posLabel)}</h2><div class="info-grid"><div class="label">뜻</div><div>${v(f.meaning)}</div></div></div>`;
- else body+=`<div class="status">해당 단어의 품사 정보를 찾지 못했습니다.</div>`;
+ else if(simpleMeaning || pos==='unknown') body+=`<div class="section"><h2>${esc(data.posLabel)}</h2><div class="info-grid"><div class="label">뜻</div><div>${v(f.meaning)}</div></div></div>`;
+ else body+=`<div class="section"><h2>${esc(data.posLabel)}</h2><div class="info-grid"><div class="label">뜻</div><div>${v(f.meaning)}</div></div></div>`;
  if(data.metaUrl) body+=`<div class="source"><a href="${esc(data.metaUrl)}" target="_blank" rel="noopener noreferrer">그라모타 원문</a></div>`; body+='</div>'; result.innerHTML=body;
 }
 function error(q,msg){result.innerHTML=`<div class="card"><div class="head"><div class="lemma">${esc(q)}</div><div class="pos">오류</div></div><div class="meaning error">${esc(msg)}</div></div>`;}
