@@ -1,11 +1,12 @@
 {
   "name": "russian-learning-tool",
-  "version": "3.4.0",
+  "version": "3.5.0",
   "private": true,
-  "description": "Russian learning tool using Gramota search POS labels and Gramota source pages for morphology",
+  "description": "Russian learning tool using Gramota search results as the primary POS source and Meta pages only for morphology",
   "scripts": {
     "start": "node server.js",
-    "test": "node test.js"
+    "test": "node test.js",
+    "test:live": "node live-test.js"
   },
   "engines": {
     "node": ">=18"
